@@ -19,14 +19,19 @@ holds no test, no document, and no tool of the repository.
    Without an account, register first:
    <https://extensions.gnome.org/accounts/register/>.
 2. Select the file `gnome/phonecam@kadir-gunel.github.io.shell-extension.zip`.
-3. The form or the page of the extension asks for a version number. This is
-   the first upload, so use `1`.
+3. The form or the page of the extension asks for a version number. Version 1
+   is in review on the site, so the next upload uses `2`.
 4. The form or the page asks for the license. Give `GPL-3.0-or-later`.
 5. Add a screenshot of the panel and a screenshot of the open menu. A person
    must take the screenshot of the open menu: a program cannot click the panel
    button on this workstation (CON-005 of the specification).
 6. Write the note for the reviewer (below).
 7. Send the form. A reviewer reads the extension before the publication.
+
+The site runs its own automatic check on each upload (`Shexli`). Read its report
+on the review page and correct what it finds. Version 1 had two findings, and
+both were true: a synchronous read of a file (`EGO-X-004`) and a compiled schema
+in the package (`EGO-P-006`). Both are corrected in version 2.
 
 ## The note for the reviewer
 

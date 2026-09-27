@@ -23,6 +23,12 @@ const CONFIG_DIRECTORY = 'phonecam';
 
 export class PhoneCamService {
     constructor() {
+        /* The shell does not promisify this method: a plain call answers "At
+           least 2 arguments required" (measured). Promisify it once, at
+           construction, so that the read of a file never blocks the main loop
+           of the shell and the review of extensions.gnome.org finds no
+           synchronous read (EGO-X-004). */
+        Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
         this._runner = null;
         this._engine = null;
         this._setup = null;
@@ -74,23 +80,27 @@ export class PhoneCamService {
         return result;
     }
 
-    /** @returns {string|null} Content of one file, or null. */
-    _readFile(path) {
+    /* The read is asynchronous. A synchronous read of a file blocks the main
+       loop of the shell. The review of extensions.gnome.org reports such a read
+       as EGO-X-004. */
+    /** @returns {Promise<string|null>} Content of one file, or null. */
+    async _readFile(path) {
         try {
-            const [ok, bytes] = GLib.file_get_contents(path);
-            return ok ? new TextDecoder().decode(bytes) : null;
+            const file = Gio.File.new_for_path(path);
+            const [contents] = await file.load_contents_async(null);
+            return new TextDecoder().decode(contents);
         } catch (_error) {
             return null;
         }
     }
 
-    /** @returns {string|null} Content of one file of the engine, or null. */
-    _readConfig(name) {
+    /** @returns {Promise<string|null>} Content of one file of the engine, or null. */
+    async _readConfig(name) {
         return this._readFile(GLib.build_filenamev([GLib.get_user_config_dir(), CONFIG_DIRECTORY, name]));
     }
 
-    /** @returns {Array<{node: string, name: string}>} Video devices from /sys. */
-    _readVideoDevices() {
+    /** @returns {Promise<Array<{node: string, name: string}>>} Video devices from /sys. */
+    async _readVideoDevices() {
         const entries = [];
         const directory = '/sys/class/video4linux';
         let dir = null;
@@ -103,19 +113,19 @@ export class PhoneCamService {
         while ((name = dir.read_name()) !== null) {
             if (!name.startsWith('video'))
                 continue;
-            const label = this._readFile(`${directory}/${name}/name`);
+            const label = await this._readFile(`${directory}/${name}/name`);
             entries.push({node: name, name: label === null ? null : label.trim()});
         }
         dir.close();
         return entries;
     }
 
-    /** @returns {string|null} The device node of the virtual camera, or null. */
-    device() {
+    /** @returns {Promise<string|null>} The device node of the virtual camera, or null. */
+    async device() {
         const now = GLib.get_monotonic_time();
         if (this._deviceTime !== 0 && now - this._deviceTime < 2 * 1000 * 1000)
             return this._device;
-        this._device = deviceNode(this._readVideoDevices(), DEFAULT_CARD_LABEL);
+        this._device = deviceNode(await this._readVideoDevices(), DEFAULT_CARD_LABEL);
         this._deviceTime = now;
         return this._device;
     }
@@ -218,11 +228,17 @@ export class PhoneCamService {
      * @returns {Promise<object>} `{state, problems, device, phone}`.
      */
     async read() {
+        const [rotation, camera, mic, mirror] = await Promise.all([
+            this._readConfig('rotation'),
+            this._readConfig('camera'),
+            this._readConfig('mic'),
+            this._readConfig('mirror'),
+        ]);
         const files = {
-            rotation: this._readConfig('rotation') ?? DEFAULT_ROTATION,
-            camera: this._readConfig('camera') ?? DEFAULT_CAMERA,
-            mic: this._readConfig('mic') ?? 'on',
-            mirror: this._readConfig('mirror') ?? 'off',
+            rotation: rotation ?? DEFAULT_ROTATION,
+            camera: camera ?? DEFAULT_CAMERA,
+            mic: mic ?? 'on',
+            mirror: mirror ?? 'off',
         };
 
         let running = false;
@@ -232,7 +248,7 @@ export class PhoneCamService {
             running = result.code === 0 && !result.cancelled && !result.timedOut;
         }
 
-        const device = this.device();
+        const device = await this.device();
         const phone = await this.phoneState();
         const pipeWireSource = await this.pipeWireSource(device);
         const problems = problemsFor({

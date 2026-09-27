@@ -20,7 +20,10 @@ cp "$repo/etc/modprobe.d/v4l2loopback.conf" "$staging/etc/modprobe.d/"
 cp "$repo/etc/modules-load.d/v4l2loopback.conf" "$staging/etc/modules-load.d/"
 chmod 755 "$staging/bin/phonecam" "$staging/bin/phonecam-setup" "$staging/setup-v4l2loopback.sh"
 cp "$repo/LICENSE" "$staging/"
-glib-compile-schemas "$staging/schemas"
+# The compiled schema stays out of the package: the review of
+# extensions.gnome.org reports it as EGO-P-006 for GNOME 45 and later, and the
+# build of the site compiles it. The installer compiles it for a local
+# installation.
 
 python3 - "$staging" <<'PY'
 import pathlib
