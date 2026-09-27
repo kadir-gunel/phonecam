@@ -6,6 +6,20 @@
  * for its own rows only.
  */
 
+/* The panel button reserves 8 px at each side, not 22 px: the theme asks for
+ * 12 px for the button and 10 px for the symbolic icon, which leaves 44 px
+ * between the two panel icons of this project. The PhoneCam icon and the
+ * Basecamp icon sit next to each other in the panel. */
+#panel .panel-button.phonecam-panel-button {
+    -natural-hpadding: 4px;
+    -minimum-hpadding: 4px;
+}
+
+#panel .panel-button.phonecam-panel-button .system-status-icon {
+    padding: 0 2px;
+    margin: 0 2px;
+}
+
 /* The menu stays narrow. The labels then shorten with "…". */
 .phonecam-menu {
     max-width: 420px;

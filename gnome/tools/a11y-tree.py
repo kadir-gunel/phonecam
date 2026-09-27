@@ -192,6 +192,21 @@ def check(applications, flat, expectations):
     return failures
 
 
+def wait_for(deadline, predicate):
+    """Read the tree again until `predicate` holds or the deadline passes.
+
+    The widget reads the state of the engine without a wait, and it reads the
+    state again when the menu opens (REQ-REFR-003). A check that runs in the
+    same moment can see the footer `Not read yet` and fail on a slow machine.
+    This function waits for the row. A row that never appears still fails.
+    """
+    applications, flat = collect(0)
+    while not predicate(flat) and time.monotonic() < deadline:
+        time.sleep(1)
+        applications, flat = collect(0)
+    return applications, flat
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wait', type=int, default=0)
@@ -221,6 +236,11 @@ def main():
         'checked': [item for item in args.checked.split(';') if item],
         'pipewire_row': args.expect_pipewire_row == 'yes',
     }
+    # The first read of the state is asynchronous, so wait for its row.
+    deadline = time.monotonic() + 20
+    applications, flat = wait_for(
+        deadline, lambda tree: any(name.startswith('Updated ') for _, _, name in tree))
+
     failures = check(applications, flat, expectations)
     print(f'{len(flat)} accessibility nodes, {len(failures)} failure(s)')
     for failure in failures:

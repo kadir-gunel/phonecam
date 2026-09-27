@@ -80,6 +80,11 @@ class PhoneCamIndicator extends PanelMenu.Button {
         this._setupRunning = false;
         this._renderedKey = null;
 
+        /* The theme gives a panel button 12 px at each side and each symbolic
+           icon 10 px more. This class makes the two icons of this project sit
+           close. See the rule in stylesheet.css. */
+        this.add_style_class_name('phonecam-panel-button');
+
         this._buildPanel();
         this._applySettings();
         this._connectSettings();
