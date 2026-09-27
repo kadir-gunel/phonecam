@@ -7,6 +7,11 @@
 # missing. It needs root for the kernel module, so it asks for the password in
 # a terminal window when it runs from a graphical session.
 #
+# The root part of the installation must not be a file of this directory: a
+# process of the user can change that file, and the file runs as root. This
+# command therefore installs the module script and its configuration with the
+# owner root in /usr/local/lib/phonecam/, and then it runs that copy.
+#
 # This command stops the camera stream and the preview window of this user
 # first. They hold the video device, and the root part of the installation
 # sends no signal to a process.
@@ -48,18 +53,58 @@ for _ in $(seq 1 15); do
 done
 
 # --- the root part ----------------------------------------------------------
+# The root part runs from a copy with the owner root, and never from the script
+# of this directory. A process of the user can change that script, and the
+# script runs as root.
+#
+# The copy holds the module script and the two configuration files of etc/.
+# The module script finds the configuration in its own directory, so the copy
+# is complete.
+root_dir=/usr/local/lib/phonecam
+root_setup=$root_dir/setup-v4l2loopback.sh
+install_cmd=/usr/bin/install
+src_dir=$(cd -- "$(dirname -- "$setup")" && pwd)
+configs="etc/modprobe.d/v4l2loopback.conf etc/modules-load.d/v4l2loopback.conf"
+
+[[ -x $install_cmd ]] || {
+  echo "phonecam-setup: the program $install_cmd is missing (package coreutils)." >&2
+  exit 1
+}
+
+# Install the copy only when a file differs, so that a repair needs one step.
+need_install=0
+cmp -s "$setup" "$root_setup" 2>/dev/null || need_install=1
+for conf in $configs; do
+  cmp -s "$src_dir/$conf" "$root_dir/$conf" 2>/dev/null || need_install=1
+done
+
 # Two ways to ask for the password, in this order:
 #   1. a terminal that runs this command, with sudo,
 #   2. the polkit dialog of the desktop (GNOME).
+elevate=""
 if [[ -t 0 ]]; then
-  exec sudo "$setup"
+  elevate=sudo
+elif command -v pkexec >/dev/null 2>&1; then
+  elevate=pkexec
+else
+  echo "phonecam-setup: no program asks for the password." >&2
+  echo "phonecam-setup: run this command in a terminal:" >&2
+  echo "phonecam-setup:   sudo $setup" >&2
+  exit 1
 fi
 
-if command -v pkexec >/dev/null 2>&1; then
-  exec pkexec "$setup"
+# The install program writes the files with the owner root and the group root.
+# A user process cannot change them after that.
+if ((need_install)); then
+  echo "phonecam-setup: install the root part in $root_dir"
+  "$elevate" "$install_cmd" -D -o root -g root -m 755 "$setup" "$root_setup"
+  for conf in $configs; do
+    "$elevate" "$install_cmd" -D -o root -g root -m 644 \
+      "$src_dir/$conf" "$root_dir/$conf"
+  done
 fi
 
-echo "phonecam-setup: no program asks for the password." >&2
-echo "phonecam-setup: run this command in a terminal:" >&2
-echo "phonecam-setup:   sudo $setup" >&2
-exit 1
+# Run the copy, and never the script of this directory. In a terminal, sudo
+# keeps the permission for a short time, so the calls above and this call ask
+# for the password one time.
+exec "$elevate" "$root_setup"

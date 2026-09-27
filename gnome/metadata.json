@@ -6,6 +6,5 @@
     "50"
   ],
   "settings-schema": "org.gnome.shell.extensions.phonecam",
-  "url": "https://github.com/kadir-gunel/phonecam",
-  "version": 1
+  "url": "https://github.com/kadir-gunel/phonecam"
 }

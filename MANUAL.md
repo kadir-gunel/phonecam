@@ -10,7 +10,7 @@ The camera of the OnePlus 5 is a webcam for this computer.
 | `phonecam` | The control command, in the repository (section 11). |
 | The panel of GNOME | The same control in the top panel (section 3). |
 | "PhoneCam" | The sound of the phone microphone, as a microphone of the computer. |
-| `phonecam-setup` | The repair command, in the repository (section 11). It builds the kernel module again. |
+| `phonecam-setup` | The repair command, in the repository (section 11). It builds the kernel module again, and it puts the root part in `/usr/local/lib/phonecam/`. |
 
 The program scrcpy sends the camera picture from the phone to the video device.
 The phone connects with the USB cable. The phone needs the setting "USB
@@ -222,7 +222,7 @@ the phone go through the kernel and PipeWire.
 | The application "Camera" (Snapshot) shows no camera, and the stream runs. | That application asks the camera portal, and the portal gets its camera from PipeWire. PipeWire read the list of the video devices while the stream was stopped, so it holds no node of the camera. | Start the stream, then run `systemctl --user restart pipewire`, or use the row `Restart PipeWire` of the panel of GNOME. See section 7. |
 | `phonecam: no phone in adb state 'device'` | The cable is loose. The phone waits for the permission for USB debugging. | Connect the cable again. Unlock the phone. Agree to the question about USB debugging. |
 | The picture is not upright. | The rotation value does not agree with the position of the phone. | Do section 6. |
-| `phonecam: /dev/video10 is missing` | The kernel module is not loaded. This occurs after a kernel update. | Run `phonecam-setup`. Type the password in the terminal window. |
+| `phonecam: /dev/video10 is missing` | The kernel module is not loaded. This occurs after a kernel update. | Run `phonecam-setup`. Type the password in the terminal window. The command puts the root part in `/usr/local/lib/phonecam/` first. |
 | The picture is dark, or it shows the room behind the phone. | The camera on the other side of the phone is in use. | Use the camera that looks at you: `phonecam camera 0` or `phonecam camera 1`. |
 | The picture does not change after `phonecam rotate`, or after a camera change. | The application keeps the picture and the size that it opened at the start. | Select the camera again in the application. A phonecam preview window opens again by itself. |
 | The application has no sound from the phone. | The microphone is off, or the application uses another microphone. | Run `phonecam mic` and select "PhoneCam" in the microphone list of the application. The camera is "PhoneCam Camera", the microphone is "PhoneCam": pipewire-pulse cuts a label at the first space, so the microphone keeps the short name. |
@@ -300,11 +300,15 @@ On the other computer, do these steps:
 
        gnome-extensions enable phonecam@kadir-gunel.github.io
 
-3. Build the kernel module. The command stops the camera stream and the
-   preview window of the user first, then it asks for the password. It is safe
-   to run again:
+3. Build the kernel module:
 
        ./bin/phonecam-setup
+
+   The command stops the camera stream and the preview window of the user
+   first. Then it asks for the password. It puts a copy of the module script
+   and of its configuration with the owner root in `/usr/local/lib/phonecam/`.
+   Then it runs that copy. A process of the user cannot change the copy. It is
+   safe to run the command again.
 
 4. Connect the phone with the USB cable.
 5. Unlock the phone. Agree to the question about USB debugging. The phone asks
@@ -315,6 +319,7 @@ On the other computer, do these steps:
 To remove everything from a computer, remove the widget and the module, then,
 optionally:
 
+    sudo rm -rf /usr/local/lib/phonecam
     sudo rm /etc/modprobe.d/v4l2loopback.conf /etc/modules-load.d/v4l2loopback.conf
     sudo rmmod v4l2loopback
     rm -rf ~/.config/phonecam
@@ -355,6 +360,17 @@ script, and its configuration into the directory of the widget:
     ~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io/bin/
         phonecam                        the control command
         phonecam-setup                  the repair command
+
+The command `phonecam-setup` puts a copy of the module script and of its
+configuration with the owner root:
+
+    /usr/local/lib/phonecam/setup-v4l2loopback.sh                  the root part
+    /usr/local/lib/phonecam/etc/modprobe.d/v4l2loopback.conf       the module options
+    /usr/local/lib/phonecam/etc/modules-load.d/v4l2loopback.conf   the load at boot
+
+The root part runs from that copy. A process of the user cannot change a file
+of `/usr/local/lib/phonecam/`. The command makes the copy again when a file of
+the widget differs from it.
 
 These files control the device and the stream:
 

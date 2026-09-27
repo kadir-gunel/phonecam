@@ -86,6 +86,12 @@ cp "$repo/bin/phonecam-setup" "$target/bin/"
 cp "$repo/setup-v4l2loopback.sh" "$target/"
 cp "$repo/etc/modprobe.d/v4l2loopback.conf" "$target/etc/modprobe.d/"
 cp "$repo/etc/modules-load.d/v4l2loopback.conf" "$target/etc/modules-load.d/"
+# The command bin/phonecam-setup installs the root-owned copy only when a file
+# of the extension directory differs from that copy. Mark the module script, so
+# that this test always covers the install step, also on a machine that holds a
+# root-owned copy with the same content.
+printf '\n# smoke test: this copy differs from the root-owned copy\n' \
+    >> "$target/setup-v4l2loopback.sh"
 glib-compile-schemas "$target/schemas"
 
 # The test engine keeps the state in a file of the private configuration.
@@ -153,7 +159,16 @@ printf '%s\t%s\n' "\$(date +%H:%M:%S)" "\$*" >> "$TMP/adb.log"
 [ "\${1:-}" = "get-state" ] && echo device
 exit 0
 STUB
-chmod 755 "$TMP/stubs/scrcpy" "$TMP/stubs/adb"
+# The test pkexec: it records its argument list and it changes nothing. The
+# root part of the installation must run from the root-owned copy in
+# /usr/local/lib/phonecam/, and the test reads that call here. The test writes
+# no file under /usr/local.
+cat > "$TMP/stubs/pkexec" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >> "$TMP/pkexec.log"
+exit 0
+STUB
+chmod 755 "$TMP/stubs/scrcpy" "$TMP/stubs/adb" "$TMP/stubs/pkexec"
 export PATH="$TMP/stubs:$PATH"
 
 cat > "$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<EOF
@@ -259,6 +274,54 @@ else
 fi
 [ -f "$TMP/adb.log" ] || fail "the widget did not ask the phone"
 grep -q "get-state" "$TMP/adb.log" || fail "the widget did not run adb get-state"
+
+# --- the setup command: the root part runs from a root-owned copy -----------
+# The row `Set up the virtual camera` runs the command bin/phonecam-setup of
+# the extension directory. That command must put a root-owned copy of the
+# module script and of its configuration in /usr/local/lib/phonecam/ first, and
+# then it must run that copy with pkexec. It must never give a file of the
+# extension directory to pkexec: a process of the user can change that file,
+# and the file would run as root.
+#
+# The test runs that command, and not the row of the menu: this workstation has
+# no program for a synthetic click (CON-003), and the accessibility interface of
+# the shell answers no action for a row of its menu. The test pkexec of PATH
+# records the argument list, so the test covers every call of the root part and
+# it writes no file under /usr/local.
+[ "$(command -v pkexec)" = "$TMP/stubs/pkexec" ] ||
+    fail "the test pkexec is not the first pkexec of PATH: $(command -v pkexec)"
+rm -f "$TMP/pkexec.log"
+echo "--- the test runs the setup command of the widget"
+PHONECAM_NONINTERACTIVE=1 "$target/bin/phonecam-setup" < /dev/null ||
+    fail "the setup command of the widget failed"
+[ -f "$TMP/pkexec.log" ] || fail "the setup command did not run pkexec"
+echo "--- pkexec calls:"
+sed 's/^/    /' "$TMP/pkexec.log"
+
+source_script="$target/setup-v4l2loopback.sh"
+root_dir=/usr/local/lib/phonecam
+root_script="$root_dir/setup-v4l2loopback.sh"
+# The test fails when the root part runs the script of the extension directory:
+# that script is user-writable. See the review guideline "Privileged Subprocess
+# must not be user-writable" of extensions.gnome.org.
+bad=$(awk -v src="$source_script" '$1 == src' "$TMP/pkexec.log")
+[ -z "$bad" ] || fail "the root part ran the user-writable script: $bad"
+first=$(sed -n '1p' "$TMP/pkexec.log")
+case $first in
+"/usr/bin/install "*) ;;
+*) fail "the first pkexec call is not the install of the root-owned copy: $first" ;;
+esac
+last=$(sed -n '$p' "$TMP/pkexec.log")
+[ "$last" = "$root_script" ] ||
+    fail "the last pkexec call is not the root-owned module script: $last"
+for wanted in \
+    "/usr/bin/install -D -o root -g root -m 755 $source_script $root_script" \
+    "/usr/bin/install -D -o root -g root -m 644 $target/etc/modprobe.d/v4l2loopback.conf $root_dir/etc/modprobe.d/v4l2loopback.conf" \
+    "/usr/bin/install -D -o root -g root -m 644 $target/etc/modules-load.d/v4l2loopback.conf $root_dir/etc/modules-load.d/v4l2loopback.conf"; do
+    grep -qxF -- "$wanted" "$TMP/pkexec.log" ||
+        fail "the setup command did not make the root-owned copy: $wanted"
+done
+echo "the root part runs from the root-owned copy $root_script"
 
 # --- disable ----------------------------------------------------------------
 gnome-extensions disable "$uuid" > /dev/null 2>&1 || fail "the extension did not disable"

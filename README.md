@@ -79,11 +79,14 @@ Both front-ends use these steps.
    ```
 
    The command stops the camera stream and the preview window of your user
-   first, then it asks for the password. The part that runs as root sends no
-   signal to any process. The GNOME front-end has the menu row
-   `Set up the virtual camera` for the same step; it asks with the polkit
-   dialog of the desktop. The command is safe to run again. Run it after a
-   kernel update if the virtual camera is missing.
+   first, then it asks for the password. It puts a copy of the module script
+   and of its configuration with the owner root in `/usr/local/lib/phonecam/`,
+   and it runs that copy: a process of your user cannot change the file that
+   runs as root. The part that runs as root sends no signal to any process.
+   The GNOME front-end has the menu row `Set up the virtual camera` for the
+   same step; it asks with the polkit dialog of the desktop. The command is
+   safe to run again. Run it after a kernel update if the virtual camera is
+   missing.
 
 4. Connect the phone by USB, unlock it, and accept the USB-debugging question.
 5. Start the stream and select `PhoneCam Camera` in the application. The menu
@@ -155,6 +158,7 @@ rm -rf ~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io
 The virtual camera and the state, if you do not want them any more:
 
 ```sh
+sudo rm -rf /usr/local/lib/phonecam
 sudo rm /etc/modprobe.d/v4l2loopback.conf /etc/modules-load.d/v4l2loopback.conf
 sudo rmmod v4l2loopback
 rm -rf "$HOME/.config/phonecam"

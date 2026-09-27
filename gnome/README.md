@@ -47,7 +47,9 @@ Then:
    ```
 
 3. Build the virtual camera, from the menu row `Set up the virtual camera`.
-   The command asks for your password with the polkit dialog of GNOME.
+   The command asks for your password with the polkit dialog of GNOME. It puts
+   the root part in `/usr/local/lib/phonecam/` first, and then it runs that
+   copy. A process of your user cannot change the copy.
 4. Connect the phone, unlock it, and allow USB debugging.
 
 ## Use

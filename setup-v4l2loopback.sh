@@ -4,7 +4,12 @@
 # phonecam - build the v4l2loopback module and install its configuration.
 # This script is the root part of the installation and of the repair.
 #
-#     sudo ~/.local/share/phonecam/setup-v4l2loopback.sh
+# Run the command bin/phonecam-setup. That command installs this script and the
+# two configuration files of etc/ with the owner root in
+# /usr/local/lib/phonecam/, and then it runs that copy.
+#
+# The script finds the configuration in the directory of the script. The
+# directory of the copy holds etc/, so the copy is complete.
 #
 # The script builds the module for each installed kernel that has a header
 # directory, installs the configuration for the boot, and loads the module. It
@@ -51,6 +56,8 @@ if [[ -n $version && -d /sys/firmware/efi ]]; then
 fi
 
 # --- the configuration of the device ---------------------------------------
+# The sources sit in etc/ beside the script, in the repository and in the
+# root-owned copy.
 install -Dm644 "$here/etc/modprobe.d/v4l2loopback.conf" /etc/modprobe.d/v4l2loopback.conf
 install -Dm644 "$here/etc/modules-load.d/v4l2loopback.conf" /etc/modules-load.d/v4l2loopback.conf
 say "configuration installed in /etc/modprobe.d and /etc/modules-load.d"
