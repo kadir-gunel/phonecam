@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The panel indicator of PhoneCam: the icon, the menu, the wheel, and the
 // keyboard shortcut.
 //

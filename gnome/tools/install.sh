@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install the GNOME widget for the current user. The engine of this
 # repository ships with the extension, so the extension is self-contained.
 set -eu

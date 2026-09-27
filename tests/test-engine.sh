@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Tests for the engine bin/phonecam. They need no phone, no kernel module, and
 # no desktop.
 #

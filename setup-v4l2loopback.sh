@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # phonecam - build the v4l2loopback module and install its configuration.
 # This script is the root part of the installation and of the repair.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Engine access for the PhoneCam panel widget.
 //
 // The engine is the command bin/phonecam of this repository. It does the work:

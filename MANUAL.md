@@ -346,7 +346,7 @@ The repository holds all files:
         tests/                          the test of the engine
         README.md                       the installation guide
         MANUAL.md                       this manual
-        LICENSE                         the license (MIT)
+        LICENSE                         the license (GPL-3.0-or-later)
         preview.png                     the screenshot of the panel
 
 The installer of the widget puts the engine, the setup command, the module

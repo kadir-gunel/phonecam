@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // PhoneCam for GNOME Shell: the camera and the microphone of the phone as a
 // webcam and a microphone of this computer.
 

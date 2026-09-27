@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read the menu of the PhoneCam panel widget through the accessibility
 interface of the GNOME Shell instance under test.
 

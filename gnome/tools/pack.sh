@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Build phonecam@kadir-gunel.github.io.shell-extension.zip for distribution.
 # The `zip` program is not needed. The working tree stays clean.
 set -eu

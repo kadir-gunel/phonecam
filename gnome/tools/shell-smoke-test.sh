@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Test the PhoneCam widget in a separate GNOME Shell instance.
 #
 # The test does not change the session of the user:

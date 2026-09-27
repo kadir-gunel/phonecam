@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The state of PhoneCam and the plan of the menu.
 //
 // This module is pure: it takes the content of the files of the engine and

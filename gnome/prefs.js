@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Preferences window of PhoneCam for GNOME Shell.
 
 import Adw from 'gi://Adw?version=1';

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Run the unit tests of the GNOME widget. No shell and no phone are necessary.
 set -eu
 

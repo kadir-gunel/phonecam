@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // State reads and actions for the PhoneCam panel widget.
 //
 // Every call of the engine goes through one queue, so the widget never starts

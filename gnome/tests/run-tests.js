@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Tests for the PhoneCam panel widget. Run with tools/test.sh.
 
 import GLib from 'gi://GLib';

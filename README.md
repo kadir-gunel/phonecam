@@ -178,4 +178,8 @@ rm -rf "$HOME/.config/phonecam"
 
 ## License
 
-[MIT](LICENSE)
+GPL-3.0-or-later. See `LICENSE`. The project follows the license of GNOME
+Shell, because an extension runs in the shell process and uses the modules of
+the shell.
+
+Copyright (c) 2026 kadir-guenel.
