@@ -16,8 +16,9 @@ holds no test, no document, and no tool of the repository.
 
 1. Open <https://extensions.gnome.org/upload/> and log in.
 2. Select the file `gnome/phonecam@kadir-gunel.github.io.shell-extension.zip`.
-3. The form asks for a version. This is the first upload, so use `1`.
-4. Select the license `GPL-3.0-or-later`.
+3. The form or the page of the extension asks for a version number. This is
+   the first upload, so use `1`.
+4. The form or the page asks for the license. Give `GPL-3.0-or-later`.
 5. Add a screenshot of the panel and a screenshot of the open menu. A person
    must take the screenshot of the open menu: a program cannot click the panel
    button on this workstation (CON-005 of the specification).
