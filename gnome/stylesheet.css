@@ -1,0 +1,65 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * PhoneCam for GNOME Shell.
+ *
+ * The widget uses the classes of the theme where they exist and adds classes
+ * for its own rows only.
+ */
+
+/* The menu stays narrow. The labels then shorten with "…". */
+.phonecam-menu {
+    max-width: 420px;
+}
+
+/* The icon takes the attention colour while the stream runs. The two classes
+ * follow the colour scheme of the theme, as the shell theme does. */
+.phonecam-dark .phonecam-live .system-status-icon,
+.phonecam-dark .phonecam-problem .phonecam-row-title {
+    color: #ff7800;
+}
+
+.phonecam-light .phonecam-live .system-status-icon,
+.phonecam-light .phonecam-problem .phonecam-row-title {
+    color: #e01b24;
+}
+
+.phonecam-header .phonecam-row-title {
+    font-weight: bold;
+}
+
+.phonecam-header .phonecam-row-subtitle {
+    font-size: 0.9em;
+    opacity: 0.65;
+}
+
+.phonecam-row-box {
+    spacing: 2px;
+}
+
+.phonecam-row-subtitle {
+    font-size: 0.9em;
+    opacity: 0.65;
+}
+
+.phonecam-row-plain .phonecam-row-title {
+    opacity: 0.8;
+}
+
+.phonecam-problem .phonecam-row-subtitle {
+    font-size: 0.9em;
+    opacity: 0.9;
+}
+
+.phonecam-hint .phonecam-row-title {
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+.phonecam-hint .phonecam-row-subtitle {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.phonecam-error .phonecam-row-title {
+    font-size: 0.9em;
+}

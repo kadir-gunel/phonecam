@@ -1,0 +1,207 @@
+# Requirement Specification: PhoneCam for GNOME Shell
+
+Data module code: `OML-GNOME-REQ-0001`
+Revision: 1
+Date: 2026-09-27
+Status: Released for implementation
+
+## 1. Identification and scope
+
+### 1.1 Subject
+
+A GNOME Shell extension for GNOME Shell 50 and later. The extension shows the
+PhoneCam camera stream in the top panel and it controls that stream. The
+extension identifier is `phonecam@kadir-gunel.github.io`. The extension lives in the
+`gnome/` directory of this repository.
+
+### 1.2 Purpose
+
+The engine (`bin/phonecam`) is a command line program that does not use a
+desktop environment. This specification covers the front-end for GNOME Shell
+50 and later: it shows the state of the stream in the top panel and it sends
+the commands of the engine.
+
+### 1.3 In scope
+
+- One panel indicator with an icon that shows the state of the stream.
+- One drop-down menu with the state and with every command of the engine.
+- A click on a menu row runs one command of the engine.
+- The wheel over the panel button turns the picture (the wheel of the bar
+  widget).
+- One keyboard shortcut that starts and stops the stream (the optional
+  keybinding of the manual).
+- A preferences window: the path of the engine, the poll time, and the
+  keyboard shortcut.
+- A menu item that runs the setup of the virtual camera with the polkit
+  dialog of GNOME.
+- Tests: unit tests and a smoke test in a separate GNOME Shell instance.
+
+### 1.4 Out of scope
+
+- The engine. The extension runs `bin/phonecam` and does not copy its logic.
+- The phone application, scrcpy, adb, and the kernel module v4l2loopback.
+  The extension reports a missing item and shows the command for the fix.
+- A change of the media pipeline.
+
+## 2. Reference documents
+
+| Reference | Document |
+|---|---|
+| R1 | `README.md` and `MANUAL.md` of this repository |
+| R2 | `bin/phonecam` (the engine, with its own usage text) |
+| R3 | `bin/phonecam-setup` and `setup-v4l2loopback.sh` (the setup of the module) |
+| R4 | ASD-STE100 Simplified Technical English, issue 9 |
+| R5 | The GNOME Shell 50 extension API (the modules of the shell) |
+
+## 3. Definitions
+
+| Term | Definition |
+|---|---|
+| Engine | The command `bin/phonecam` of this repository. |
+| Stream | The scrcpy process that sends the camera of the phone to the v4l2loopback device and the microphone to the virtual source. |
+| Settling | The time after a command until the engine reports the new state. |
+| Device | The v4l2loopback video device with the card label `PhoneCam Camera`. |
+| Problems | The items that stop the function: a missing device, a missing scrcpy or adb, and no phone in the adb state `device`. |
+
+## 4. Requirements
+
+### 4.1 The engine
+
+| ID | Requirement |
+|---|---|
+| REQ-ENG-001 | The extension SHALL run the engine as a child process and SHALL NOT copy the logic of the engine. |
+| REQ-ENG-002 | The extension SHALL start the engine with an argument list and SHALL NOT start a shell. |
+| REQ-ENG-003 | The extension SHALL read the state of the stream with the command `is-running` (exit status only). |
+| REQ-ENG-004 | The extension SHALL read the camera, the rotation, the mirror, and the microphone from the files that the engine writes in `$XDG_CONFIG_HOME/phonecam/`. The extension SHALL NOT write those files. |
+| REQ-ENG-005 | The extension SHALL stop one engine command after 20 seconds. The exception is `start` (45 seconds, because it searches the phone) and a command that stops the stream and starts it again, that is `rotate`, `camera`, `mirror`, and `mic` (75 seconds). |
+| REQ-ENG-006 | The extension SHALL keep a path setting for the engine. The default value SHALL be the engine next to the extension, then `phonecam` on the search path. |
+
+### 4.2 Display
+
+| ID | Requirement |
+|---|---|
+| REQ-DISP-001 | The panel button SHALL show the symbolic icon `camera-web-symbolic`, and it SHALL use the theme class `system-status-icon`. |
+| REQ-DISP-002 | The panel button SHALL show the state: the mouth of the menu SHALL hold the text `PhoneCam` and a second line with the state. |
+| REQ-DISP-003 | The panel button SHALL use the attention colour of the theme while the stream runs (REQ-DISP-017 of the Basecamp Widget specification: `#ff7800` for the dark style, `#e01b24` for the light style). |
+| REQ-DISP-004 | The menu SHALL hold these rows in this order: the state, `Start the stream` or `Stop the stream`, the submenu `Turn the picture`, `Mirror`, `Microphone`, the submenu `Camera`, `Preview window`, the state of the phone, one row for each problem, `Set up the virtual camera`, and the footer rows `Refresh` and `Settings`. |
+| REQ-DISP-005 | The submenu `Turn the picture` SHALL hold the values 0, 90, 180, and 270. The current value SHALL have the check ornament. |
+| REQ-DISP-006 | The submenu `Camera` SHALL hold the camera ids of the phone with a short name: 0 main camera on the back, 1 front camera, 2 camera on the back with the largest sensor, and 3 camera on the back. The current value SHALL have the check ornament. |
+| REQ-DISP-007 | The rows `Mirror` and `Microphone` SHALL be switch rows. The switch SHALL show the value from the engine. A change of the switch SHALL run the engine. |
+| REQ-DISP-008 | The menu SHALL show a problem row with the exact command for the fix, or SHALL NOT show a problem row when no problem exists. The row of the phone SHALL hold the state of the phone: absent, `unauthorized`, or `offline`. |
+| REQ-DISP-009 | The menu SHALL show the time of the last state read. |
+| REQ-DISP-010 | The menu SHALL NOT be wider than 420 px. A long text SHALL end with "…". |
+
+### 4.3 Actions
+
+| ID | Requirement |
+|---|---|
+| REQ-ACT-001 | The row `Start the stream` SHALL run the engine with `start`. The row `Stop the stream` SHALL run the engine with `stop`. The menu SHALL show the row for the state that the engine does not have. |
+| REQ-ACT-002 | A value in the submenu `Turn the picture` SHALL run the engine with `rotate <value>`. |
+| REQ-ACT-003 | A value in the submenu `Camera` SHALL run the engine with `camera <id>`. |
+| REQ-ACT-004 | The switch `Mirror` SHALL run the engine with `mirror on` or `mirror off`. |
+| REQ-ACT-005 | The switch `Microphone` SHALL run the engine with `mic on` or `mic off`. |
+| REQ-ACT-006 | The row `Preview window` SHALL run the engine with `preview`. The preview is a child process of the extension. The same row SHALL close an open preview. The extension SHALL stop that child process at disable time. |
+| REQ-ACT-007 | The row `Set up the virtual camera` SHALL run `bin/phonecam-setup`. That command SHALL use the polkit dialog of the session. |
+| REQ-ACT-008 | The wheel over the panel button SHALL run `cycle-rotation` (wheel up) or `prev-rotation` (wheel down). |
+| REQ-ACT-009 | A keyboard shortcut SHALL run `start` or `stop`, in the same way as the first row of the menu. The shortcut SHALL exist only when the setting is not empty. |
+| REQ-ACT-010 | The extension SHALL read the state again after each action. |
+| REQ-ACT-011 | The menu SHALL close after an action with a visible result (start, stop, preview). |
+
+### 4.4 State reads
+
+| ID | Requirement |
+|---|---|
+| REQ-REFR-001 | The extension SHALL read the state at enable time and then after each `poll-interval` period. The default value of `poll-interval` is 5 seconds. |
+| REQ-REFR-002 | The extension SHALL read the state each second for 12 seconds after an action, until the engine reports the new state. |
+| REQ-REFR-003 | The extension SHALL read the state of the phone and the state of the device when the menu opens, and SHALL keep that result for 10 seconds. |
+| REQ-REFR-004 | The extension SHALL NOT start a second read while a read runs. |
+| REQ-REFR-005 | The extension SHALL stop the reads at disable time. |
+
+### 4.5 Preferences
+
+| ID | Requirement |
+|---|---|
+| REQ-PREF-001 | The preferences window SHALL use the GNOME `Adw` widgets. |
+| REQ-PREF-002 | The preferences window SHALL hold these controls: the path of the engine, the poll interval in seconds (1 to 60), and the keyboard shortcut. |
+| REQ-PREF-003 | The extension SHALL apply each change without a shell restart. |
+
+### 4.6 Portability and setup
+
+| ID | Requirement |
+|---|---|
+| REQ-SET-001 | The installer SHALL put the engine, the setup command, the module setup script, and the configuration files of the module into the directory of the extension, so that the extension is self-contained. |
+| REQ-SET-002 | The command `bin/phonecam-setup` SHALL use `pkexec` when `pkexec` is available, and it SHALL use a terminal with `sudo` only when `pkexec` is not available. |
+| REQ-SET-003 | The script `setup-v4l2loopback.sh` SHALL also work when the kernel package holds the module and no sources exist in `/usr/src`. It SHALL install the configuration and load the module in that case. |
+| REQ-SET-004 | The extension SHALL NOT install packages. It SHALL show the exact package command in the problem row. |
+
+### 4.7 Quality and safety
+
+| ID | Requirement |
+|---|---|
+| REQ-QA-001 | The extension SHALL NOT block the shell. Every call of the engine SHALL be asynchronous. |
+| REQ-QA-002 | The extension SHALL remove all timers, child processes, menus, and signal handlers at disable time. |
+| REQ-QA-003 | The extension SHALL NOT read or write a credential. It reads configuration files of the engine only. |
+| REQ-QA-004 | The extension SHALL NOT start `pacman` or another package manager. |
+| REQ-QA-005 | The extension SHALL keep all state in memory for the session. It SHALL write no file of its own. |
+
+## 5. The controls of the front-end
+
+| Control | Result |
+|---|---|
+| Click on the panel button | Opens the menu |
+| Row `Start the stream` / `Stop the stream` | Starts or stops the stream |
+| Row `Turn the picture` | Sets the rotation to 0, 90, 180, or 270 |
+| Row `Mirror`, row `Microphone` | Switches the value, and starts the stream again |
+| Row `Camera` | Selects one of the cameras of the phone |
+| Row `Preview window` | Opens or closes the picture in a window |
+| Row `Restart PipeWire` | Lets PipeWire find the camera, for portal applications |
+| Row `Set up the virtual camera` | Builds the kernel module |
+| Wheel over the panel button | Next or previous rotation |
+| Keyboard shortcut | Starts or stops the stream |
+
+A click on a GNOME panel button opens its menu, so a click cannot carry an
+action of its own. Those actions are rows of the menu.
+
+## 6. Verification
+
+| ID | Requirement | Verification method |
+|---|---|---|
+| VER-001 | REQ-ENG-001 to REQ-ENG-006, REQ-ACT-001 to REQ-ACT-005 | Unit test of the argument builder and of the read of the configuration files. |
+| VER-002 | REQ-DISP-001 to REQ-DISP-010, REQ-ACT-008 | Live test in a separate GNOME Shell instance with a test engine (the smoke test). The test reads the panel and the menu through the accessibility interface. |
+| VER-003 | REQ-ACT-006, REQ-ACT-007, REQ-QA-002 | The smoke test counts the child processes and the timers after `disable()`. |
+| VER-004 | REQ-SET-003 | Test with the module of the kernel package and without sources in `/usr/src` (this workstation). |
+| VER-005 | REQ-REFR-001 to REQ-REFR-005 | The smoke test reads the record of the calls of the test engine. |
+| VER-006 | REQ-QA-001, REQ-QA-004 | Code review and the record of the calls. |
+
+## 7. Constraints and limits
+
+| ID | Constraint |
+|---|---|
+| CON-001 | This workstation has no `scrcpy` and no `adb`. A stream cannot run here. The extension shows the problem rows in that case, and the smoke test uses a test engine. |
+| CON-002 | The module `v4l2loopback` is available in the kernel package `linux-cachyos`, but it is not loaded and no `/dev/video*` exists. `setup-v4l2loopback.sh` needs a change (REQ-SET-003). |
+| CON-003 | The workstation has no program for the synthesis of pointer events. A click and a wheel turn cannot be automated. The smoke test reads the menu through the accessibility interface; the unit tests cover the command of each action. See the same constraint in the Basecamp Widget specification. |
+| CON-004 | The polkit dialog of `pkexec` needs a user action. The smoke test uses a test `pkexec` that records the argument list. |
+| CON-005 | The engine takes the path of its configuration files from its own environment. The extension does not change that path, so an action from the menu and a command from a terminal have the same result. |
+
+## 8. Missing information
+
+| ID | Open item | Effect if the answer is "yes" |
+|---|---|---|
+| MIS-001 | Does the user want the sizes of the picture (`PHONECAM_SIZE`, `PHONECAM_FPS`, `PHONECAM_BITRATE`) in the preferences window? | The extension passes environment values to the engine. A command from a terminal then differs from a command from the menu. |
+| MIS-002 | Does the user want the stream to start at login? | The extension needs an autostart entry and a delay until the phone answers. |
+| MIS-003 | Does the user want more than one phone? | The extension needs a list of serial numbers for `adb -s`. |
+| MIS-004 | Does the user want the extension to install the packages `scrcpy` and `android-tools`? | The extension needs `pkexec pacman`, and the menu row becomes an action. |
+| MIS-005 | Does the user want a second microphone source with the voice presets? | The engine needs the value `PHONECAM_MIC_SOURCE` in the preferences window. |
+| MIS-006 | Does the user want the preview window to stay above the other windows? | The extension needs a window rule or a different preview program. |
+| MIS-007 | Does the user want a keyboard shortcut for the rotation as well? | The extension needs a second shortcut setting. |
+| MIS-008 | The names in the submenu `Camera` describe the cameras of a OnePlus 5, because the engine documents that phone. The phone of the user is another model. Does the user want the list of the cameras from the phone instead? | The extension reads `phonecam camera` (or `scrcpy --list-cameras`) when the menu opens. The list then needs the phone to be connected, and the menu is longer. |
+
+## 9. Release record
+
+| Revision | Date | Change |
+|---|---|---|
+| 1 | 2026-09-27 | First release: a front-end for GNOME Shell 50 and later. |
+| 5 | 2026-09-27 | The user chose the name PhoneCam. The project, the command, the state directory, the environment variables, the audio nodes, and the GNOME identifier changed. The two labels are `PhoneCam Camera` in the camera list and `PhoneCam` in the microphone list: a space cannot survive in the microphone label, because pipewire-pulse cuts a value of a module property at the first space (six forms tested, and a PipeWire rule did not apply). The extension identifier is `phonecam@kadir-gunel.github.io`, because the review guidelines of extensions.gnome.org forbid `gnome.org` as the namespace and ask for a registered domain or an account such as `username.github.io`. Measured after the change on the workstation of the user: the kernel module reports the device `PhoneCam Camera`, the stream runs, the widget reads the state with no problem row, the test of the engine passes 8 of 8 checks, the unit tests pass 99 of 99, and the smoke test passes. |
+| 4 | 2026-09-27 | Two reports of the user: the rotation does nothing while the stream runs, and the picture of the menu must not move under the pointer. (a) The cause of the first report is in the engine: the state of the stream came from the pid file only, and that file can be absent while scrcpy runs, so `rotate`, `camera`, `mirror`, and `mic` took the way "no camera stream runs" and wrote their value without a new stream. The engine now finds the process of scrcpy as a second source of the state and writes the pid file again (see MANUAL.md, section 8, and `tests/test-engine.sh`). Measured on the workstation of the user: a rotation with the stream running needs 4.3 seconds, and the state is correct after that. (b) The widget read the state each second for 12 seconds after an action and it built the menu again at each read, so a submenu closed under the pointer. The widget now builds the menu again only when the plan or the error list changed, and the time limit of a command that stops and starts the stream is 75 seconds (REQ-ENG-005). |
+| 3 | 2026-09-27 | Finding after the packages `scrcpy` and `android-tools` arrived. `adb get-state` reports a phone that awaits the answer of the user on the *error* output ("device unauthorized"), so the state was "unknown". The widget now reads the state from both outputs and shows one row per state: `unauthorized` ("The phone waits for the USB-debugging answer"), `offline`, and absent. Verified on this workstation: the widget reports one problem (the answer of the phone), the module takes the branch of the kernel package and reports `/dev/video10`, and `bin/phonecam start` stops at the phone with its own message. |
+| 2 | 2026-09-27 | Findings during the implementation and the tests. (a) The menu did not show the time of the last read, although the plan of the menu held it. The smoke test found this. (b) A switch row appears in the accessibility interface as a `check menu item` with a `check box`, so the test reads the value from the box. (c) The two shared scripts of the engine changed for GNOME: `bin/phonecam-setup` asks for the password with the polkit dialog when no terminal exists, and `setup-v4l2loopback.sh` also works when the kernel package holds the module and no sources exist in `/usr/src` (REQ-SET-002, REQ-SET-003). (d) The installer copies the engine, the setup command, the module script, and the configuration of the module into the directory of the extension, so the extension is self-contained (REQ-SET-001). |

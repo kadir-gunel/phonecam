@@ -1,0 +1,4 @@
+*.zip
+gnome/schemas/gschemas.compiled
+__pycache__/
+*.pyc

@@ -1,0 +1,709 @@
+#!/usr/bin/env bash
+#
+# phonecam - use the OnePlus 5 camera as a webcam for video conferences.
+#
+# scrcpy streams the phone camera into the v4l2 loopback device /dev/video10,
+# so every program that can open a webcam (browser, Zoom, OBS, ffmpeg, VLC)
+# can use it as "PhoneCam Camera".
+#
+#     phonecam start            start the camera stream in the background
+#     phonecam stop             stop the camera stream
+#     phonecam status           show the state of the camera stream
+#     phonecam camera <id>      use another camera of the phone
+#     phonecam rotate <value>   set the picture rotation and restart the stream
+#     phonecam preview          show the stream in a window (check the picture)
+#     phonecam run              run the stream in the foreground
+#
+# For scripts and for the front-end:
+#
+#     phonecam is-running       exit status 0 when the stream runs (no output)
+#     phonecam cycle-rotation   use the next rotation value
+#
+# Camera ids of this phone (list them with "scrcpy --list-cameras"):
+#     0  main camera on the back
+#     1  front camera (the default, because it looks at the user)
+#     2  camera on the back with the largest sensor
+#     3  camera on the back
+# The value is remembered in ~/.config/phonecam/camera.
+#
+# Rotation values: 0 (phone in landscape, the usual position for a webcam),
+# 90, 180, 270, and the mirrored variants flip0, flip90, flip180, flip270.
+# The value is remembered in ~/.config/phonecam/rotation.
+#
+# The OnePlus 5 runs LineageOS 22 (Android 15).
+#
+# An application sees the camera only while the stream runs, because the
+# loopback device uses exclusive_caps=1 (required by Chromium and WebRTC).
+# Start the stream first, then select the camera in the application.
+#
+set -euo pipefail
+
+DEVICE="${PHONECAM_DEVICE:-/dev/video10}"
+CARD_LABEL="${PHONECAM_CARD_LABEL:-PhoneCam Camera}"
+DEFAULT_CAMERA_ID=1
+SIZE="${PHONECAM_SIZE:-1920x1080}"
+FPS="${PHONECAM_FPS:-30}"
+BITRATE="${PHONECAM_BITRATE:-8M}"
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/phonecam"
+ROTATION_FILE="$CONFIG_DIR/rotation"
+CAMERA_FILE="$CONFIG_DIR/camera"
+MIC_FILE="$CONFIG_DIR/mic"
+MIRROR_FILE="$CONFIG_DIR/mirror"
+MIC_SINK="phonecam_mic_sink"
+MIC_SOURCE_NAME="phonecam_mic"
+# The label of the virtual source in the media applications. It holds no space
+# on purpose: pipewire-pulse cuts the value of a module property at the first
+# space, and quoting does not help (tested), so the label is "PhoneCam" and not
+# "PhoneCam Microphone". The name of the camera has a space, because the module of
+# v4l2loopback reads the value of card_label with quotes.
+MIC_LABEL="PhoneCam"
+# The plain "mic" source gives the sound of the microphone without a strong
+# processing. The presets for voice (mic-voice-communication, voice-call,
+# mic-voice-recognition) add a noise gate: in a quiet room they gave digital
+# silence, so they are not useful as a webcam microphone.
+MIC_SOURCE="${PHONECAM_MIC_SOURCE:-mic}"
+MIC_BITRATE="${PHONECAM_MIC_BITRATE:-128K}"
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+PIDFILE="$RUN_DIR/phonecam.pid"
+LOGFILE="$RUN_DIR/phonecam.log"
+
+usage() {
+  cat <<'EOF'
+phonecam - use the OnePlus 5 camera as a webcam for video conferences.
+
+    phonecam start            start the camera stream in the background
+    phonecam stop             stop the camera stream
+    phonecam status           show the state of the camera stream
+    phonecam camera [<id>]    show or set the camera of the phone
+    phonecam mic [on|off]     show or set the microphone of the phone
+    phonecam mirror [value]   show or set the mirrored picture (on, off, toggle)
+    phonecam rotate <value>   set the picture rotation and restart the stream
+    phonecam preview          show the stream in a window (check the picture)
+    phonecam run              run the stream in the foreground
+
+For scripts and for the front-end:
+
+    phonecam is-running       exit status 0 when the stream runs (no output)
+    phonecam cycle-rotation   use the next rotation value
+    phonecam prev-rotation    use the previous rotation value
+
+Camera ids: 0 is the main camera on the back, 1 is the front camera (the
+default, because it looks at the user), 2 and 3 are cameras on the back. List
+them with "scrcpy --list-cameras". The value is remembered in
+~/.config/phonecam/camera.
+
+The microphone of the phone is on by default. scrcpy sends the sound to the
+audio sink phonecam_mic_sink, and the virtual source "PhoneCam" reads that
+sink. Select "PhoneCam" in the microphone list of the application. The value
+is remembered in ~/.config/phonecam/mic.
+
+Rotation values: 0 (phone in landscape, the usual position for a webcam),
+90, 180, 270. The value is remembered in ~/.config/phonecam/rotation.
+
+A mirror turns the picture like a mirror: the left hand of the user appears on
+the left side of the picture. The value is remembered in
+~/.config/phonecam/mirror. The command builds the scrcpy value from the
+rotation and the mirror, for example flip270. The value goes to the
+application too, so the other participants see the mirrored picture.
+
+An application sees the camera only while the stream runs, because the loopback
+device uses exclusive_caps=1 (required by Chromium and WebRTC). Start the
+stream first, then select the camera "PhoneCam Camera" in the application.
+EOF
+}
+
+die() {
+  printf 'phonecam: %s\n' "$*" >&2
+  exit 1
+}
+
+rotation() {
+  local value
+  if [[ -n ${PHONECAM_ROTATION:-} ]]; then
+    printf '%s' "$PHONECAM_ROTATION"
+    return
+  fi
+  if [[ -r $ROTATION_FILE ]] && read -r value <"$ROTATION_FILE" && [[ -n $value ]]; then
+    printf '%s' "$value"
+    return
+  fi
+  printf '0'
+}
+
+# Camera 1 is the front camera. A conference needs the camera that looks at the
+# user, so that is the default. The value is remembered in CAMERA_FILE.
+camera_id() {
+  local value
+  if [[ -n ${PHONECAM_CAMERA_ID:-} ]]; then
+    printf '%s' "$PHONECAM_CAMERA_ID"
+    return
+  fi
+  if [[ -r $CAMERA_FILE ]] && read -r value <"$CAMERA_FILE" && [[ -n $value ]]; then
+    printf '%s' "$value"
+    return
+  fi
+  printf '%s' "$DEFAULT_CAMERA_ID"
+}
+
+# A mirror makes the picture look like a mirror: the left side of the user
+# appears on the left side of the picture. The value is remembered in
+# MIRROR_FILE.
+mirror_on() {
+  local value
+  if [[ -n ${PHONECAM_MIRROR:-} ]]; then
+    value="${PHONECAM_MIRROR}"
+  elif [[ -r $MIRROR_FILE ]] && read -r value <"$MIRROR_FILE" && [[ -n $value ]]; then
+    : # the value from the file
+  else
+    value="off"
+  fi
+  [[ $value == on ]]
+}
+
+# scrcpy turns the picture clockwise and can mirror it before the turn. A
+# rotation value that starts with "flip" already holds a mirror.
+capture_orientation() {
+  local value
+  value=$(rotation)
+  if mirror_on; then
+    printf 'flip%s' "${value#flip}"
+  else
+    printf '%s' "$value"
+  fi
+}
+
+# The process of our stream, from the command line of scrcpy. The pid file
+# lives in the runtime directory, and it can be missing while the stream runs:
+# a start that is too slow removes it, and a manual removal is possible. The
+# process itself is then the second source of the state.
+stream_pid() {
+  local pid
+  pid=$(pgrep -u "$(id -u)" -f 'scrcpy .*--video-source=camera.*--v4l2-sink=' 2>/dev/null | head -1)
+  [[ -n $pid ]] || return 1
+  printf '%s' "$pid"
+}
+
+# The state of the stream: the pid file, or the process of the stream. The
+# command writes the pid file again when it finds the process, so the state
+# heals itself. Never trust one source alone: a process can end between a
+# check and the signal, and the file can be absent.
+running_pid() {
+  local pid
+  if [[ -f $PIDFILE ]] && read -r pid <"$PIDFILE" && [[ -n $pid ]] &&
+    kill -0 "$pid" 2>/dev/null; then
+    printf '%s' "$pid"
+    return 0
+  fi
+  if pid=$(stream_pid); then
+    printf '%s\n' "$pid" >"$PIDFILE" 2>/dev/null || true
+    printf '%s' "$pid"
+    return 0
+  fi
+  return 1
+}
+
+# The loopback device can have another number: it takes the number of the first
+# free video device when the module loads. Never trust the path alone - find the
+# device by the name of its card and correct the path. A stale path that still
+# exists is the failure this prevents.
+resolve_device() {
+  if command -v v4l2-ctl >/dev/null 2>&1; then
+    local node
+    node=$(v4l2-ctl --list-devices 2>/dev/null |
+      awk -v card="$CARD_LABEL" '
+        index($0, card) { found = 1; next }
+        found && /^[[:space:]]*\/dev\/video/ { gsub(/[[:space:]]/, ""); print; exit }
+      ')
+    if [[ -n $node && -c $node ]]; then
+      DEVICE="$node"
+      return 0
+    fi
+  fi
+  [[ -c $DEVICE ]]
+}
+
+# A preview window holds the picture that it negotiated when it opened. The
+# device closes and opens again when the stream restarts (a change of the
+# camera or of the rotation), and the window then shows the old picture or
+# stops. This command watches the stream and opens the window again with the
+# new picture.
+cmd_preview() {
+  if ! running_pid >/dev/null; then
+    die "no camera stream runs. Start it with: phonecam start"
+  fi
+  command -v ffplay >/dev/null || die "ffplay is missing. Install the package ffmpeg."
+  echo "phonecam: preview of $DEVICE. Close the window to stop the preview."
+  echo "phonecam: the window opens again after a change of the camera or of the rotation."
+
+  local ff_pid="" watched pid changed started lifetime grace failures=0
+
+  # ffplay can stay alive when the device disappears. It then shows no window
+  # and it keeps the camera open, so a later program gets "device busy". Stop
+  # it in a bounded time: SIGTERM first, then SIGKILL.
+  stop_window() {
+    [[ -n $ff_pid ]] || return 0
+    kill "$ff_pid" 2>/dev/null || true
+    local i
+    for i in $(seq 1 20); do
+      kill -0 "$ff_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -9 "$ff_pid" 2>/dev/null || true
+    wait "$ff_pid" 2>/dev/null || true
+    ff_pid=""
+    return 0
+  }
+
+  trap 'stop_window; exit 0' INT TERM
+
+  while :; do
+    watched=$(running_pid) || break
+    started=$SECONDS
+    changed=0
+
+    ffplay -hide_banner -loglevel error \
+      -window_title "phonecam preview - camera $(camera_id), orientation $(capture_orientation)" \
+      -f v4l2 "$DEVICE" </dev/null &
+    ff_pid=$!
+
+    # Wait for the end of the window, or for a change of the stream. The stream
+    # has no pid between stop and start: wait through that gap.
+    while kill -0 "$ff_pid" 2>/dev/null; do
+      sleep 1
+      if pid=$(running_pid) && [[ $pid != "$watched" ]]; then
+        changed=1
+        break
+      fi
+    done
+
+    stop_window
+    lifetime=$((SECONDS - started))
+
+    # Two races make a decision here difficult:
+    #   1. ffplay can end before the restart of the stream changes the pidfile,
+    #      so the old pid is still there.
+    #   2. The pidfile is absent for a moment during the restart.
+    # Wait, then look at the state again.
+    sleep 2
+    grace=0
+    while ! pid=$(running_pid); do
+      grace=$((grace + 1))
+      ((grace > 5)) && break
+      sleep 1
+    done
+
+    if ! pid=$(running_pid); then
+      echo "phonecam: the camera stream stopped." >&2
+      break
+    fi
+
+    if ((changed)) || [[ $pid != "$watched" ]]; then
+      failures=0
+      echo "phonecam: the picture changed. The window opens again."
+      sleep 1
+      continue
+    fi
+
+    # The stream did not change, so the window ended by itself. A fast end
+    # points to a problem. Open the window again a limited number of times.
+    if ((lifetime < 2)); then
+      failures=$((failures + 1))
+      if ((failures >= 3)); then
+        echo "phonecam: the window stopped three times. Another program possibly uses the camera." >&2
+        return 1
+      fi
+      sleep 1
+      continue
+    fi
+
+    break
+  done
+}
+
+# ---------------------------------------------------------------------------
+# The microphone of the phone
+#
+# scrcpy sends the microphone sound of the phone to an audio sink on the
+# computer. A virtual source takes the sound from that sink, so every program
+# that uses a microphone (browser, conference application) can use the phone
+# microphone as "PhoneCam".
+# ---------------------------------------------------------------------------
+
+mic_on() {
+  local value
+  if [[ -n ${PHONECAM_MIC:-} ]]; then
+    value="${PHONECAM_MIC}"
+  elif [[ -r $MIC_FILE ]] && read -r value <"$MIC_FILE" && [[ -n $value ]]; then
+    : # the value from the file
+  else
+    value="on"
+  fi
+  [[ $value == on ]]
+}
+
+mic_sink_loaded() {
+  pactl list short sinks 2>/dev/null | awk '{print $2}' | grep -qx "$MIC_SINK"
+}
+
+mic_source_loaded() {
+  pactl list short sources 2>/dev/null | awk '{print $2}' | grep -qx "$MIC_SOURCE_NAME"
+}
+
+mic_setup() {
+  command -v pactl >/dev/null 2>&1 || return 1
+  if ! mic_sink_loaded; then
+    pactl load-module module-null-sink sink_name="$MIC_SINK" \
+      sink_properties="device.description=phonecam capture" >/dev/null || return 1
+  fi
+  if ! mic_source_loaded; then
+    pactl load-module module-remap-source master="$MIC_SINK.monitor" \
+      source_name="$MIC_SOURCE_NAME" \
+      source_properties="device.description=$MIC_LABEL" >/dev/null || return 1
+  fi
+  # Keep the sink and the source active. PipeWire suspends an idle node, and a
+  # program that then opens the source receives silence for the first seconds.
+  pactl suspend-sink "$MIC_SINK" false >/dev/null 2>&1 || true
+  pactl suspend-source "$MIC_SOURCE_NAME" false >/dev/null 2>&1 || true
+  return 0
+}
+
+mic_teardown() {
+  command -v pactl >/dev/null 2>&1 || return 0
+  local ids
+  ids=$(pactl list short modules 2>/dev/null |
+    awk -v src="source_name=$MIC_SOURCE_NAME" -v sink="sink_name=$MIC_SINK" \
+      'index($0, src) || index($0, sink) { print $1 }')
+  local id
+  for id in $ids; do
+    pactl unload-module "$id" >/dev/null 2>&1 || true
+  done
+}
+
+# Move the audio of scrcpy from the loudspeakers into the virtual sink. The
+# environment variable PULSE_SINK does this too, but it does not work with
+# every audio backend, so this is the safety net.
+mic_route() {
+  local index
+  for _ in $(seq 1 20); do
+    index=$(pactl list sink-inputs 2>/dev/null |
+      awk '/^Sink Input #/ { id = $3; sub(/#/, "", id) } /application.name = "scrcpy"/ { print id; exit }')
+    if [[ -n $index ]]; then
+      pactl move-sink-input "$index" "$MIC_SINK" >/dev/null 2>&1 && return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+stream() {
+  local audio=(--no-audio)
+  if mic_on; then
+    # Play the audio of scrcpy into the virtual sink. The virtual source reads
+    # that sink, so the phone microphone becomes a microphone of the computer.
+    export PULSE_SINK="$MIC_SINK"
+    audio=(--audio-source="$MIC_SOURCE" --audio-codec=opus --audio-bit-rate="$MIC_BITRATE")
+  fi
+
+  exec scrcpy \
+    --video-source=camera \
+    --camera-id="$(camera_id)" \
+    --camera-size="$SIZE" \
+    --camera-fps="$FPS" \
+    --video-codec=h264 \
+    --video-bit-rate="$BITRATE" \
+    --capture-orientation="$(capture_orientation)" \
+    "${audio[@]}" \
+    --no-window \
+    --keep-active \
+    --v4l2-sink="$DEVICE"
+}
+
+connect_phone() {
+  adb start-server >/dev/null 2>&1
+  if adb get-state 2>/dev/null | grep -qx device; then
+    return 0
+  fi
+  # A stale adb server can hold the phone's single ADB interface. Restart the
+  # server once and check again.
+  adb kill-server >/dev/null 2>&1
+  sleep 1
+  adb start-server >/dev/null 2>&1
+  local deadline=$((SECONDS + 20))
+  while ((SECONDS < deadline)); do
+    if adb get-state 2>/dev/null | grep -qx device; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+cmd_start() {
+  local pid
+  if pid=$(running_pid); then
+    die "a camera stream already runs (pid $pid)"
+  fi
+  [[ -c $DEVICE ]] ||
+    die "no video device for \"$CARD_LABEL\" ($DEVICE is missing). Run: phonecam-setup"
+  command -v scrcpy >/dev/null || die "scrcpy is missing. Install the package scrcpy."
+  command -v adb >/dev/null || die "adb is missing. Install the package android-tools."
+
+  connect_phone ||
+    die "no phone in adb state 'device'. Connect the OnePlus 5 by USB and allow USB debugging on the phone."
+
+  if mic_on; then
+    mic_setup ||
+      die "cannot make the virtual microphone. Is the audio server (PipeWire) available?"
+  fi
+
+  nohup "$0" run >"$LOGFILE" 2>&1 &
+  printf '%s\n' "$!" >"$PIDFILE"
+  sleep 4
+
+  if ! pid=$(running_pid); then
+    rm -f "$PIDFILE"
+    mic_teardown
+    cat "$LOGFILE" >&2
+    die "the camera stream stopped during start-up. Output: $LOGFILE"
+  fi
+
+  if mic_on; then
+    if mic_route; then
+      mic_note="phonecam: the phone microphone is \"$MIC_LABEL\" (source $MIC_SOURCE_NAME)"
+    else
+      mic_note="phonecam: NOTE: the microphone sound does not go to $MIC_SINK."
+    fi
+  else
+    mic_note="phonecam: the microphone of the phone is off (phonecam mic on)"
+  fi
+
+  cat <<EOF
+phonecam: camera stream started (pid $pid)
+phonecam: $DEVICE is "$CARD_LABEL", camera $(camera_id), $SIZE at $FPS fps, orientation $(capture_orientation)
+$mic_note
+
+Select the camera "PhoneCam Camera" in your conference application. Check the
+picture with "phonecam preview", and correct its rotation with
+"phonecam rotate <90|180|270>". Stop the stream with "phonecam stop".
+EOF
+}
+
+cmd_stop() {
+  local pid
+  if ! pid=$(running_pid); then
+    rm -f "$PIDFILE"
+    echo "phonecam: no camera stream runs"
+    return 0
+  fi
+  kill "$pid" 2>/dev/null || true
+  local deadline=$((SECONDS + 10))
+  while kill -0 "$pid" 2>/dev/null; do
+    if ((SECONDS >= deadline)); then
+      kill -9 "$pid" 2>/dev/null || true
+      break
+    fi
+    sleep 0.2
+  done
+  rm -f "$PIDFILE"
+  mic_teardown
+  echo "phonecam: camera stream stopped"
+}
+
+cmd_camera() {
+  local value="${1:-}"
+
+  if [[ -z $value ]]; then
+    echo "phonecam: camera $(camera_id)"
+    echo "phonecam: cameras of the phone:"
+    if command -v scrcpy >/dev/null && command -v adb >/dev/null &&
+      adb get-state 2>/dev/null | grep -qx device; then
+      scrcpy --list-cameras 2>/dev/null | sed -n 's/^/phonecam:   /p' || true
+    else
+      echo "phonecam:   connect the phone and run: scrcpy --list-cameras"
+    fi
+    return 0
+  fi
+
+  [[ $value =~ ^[0-9]+$ ]] ||
+    die "invalid camera id '$value'. Use a number from: scrcpy --list-cameras"
+
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$value" >"$CAMERA_FILE"
+  echo "phonecam: camera $value"
+  echo "phonecam: the picture and the rotation can be different with another camera."
+
+  local pid
+  if pid=$(running_pid); then
+    cmd_stop
+    cmd_start
+  else
+    echo "phonecam: no camera stream runs. Start it with: phonecam start"
+  fi
+}
+
+cmd_mic() {
+  local value="${1:-}"
+
+  if [[ -z $value ]]; then
+    if mic_on; then
+      echo "phonecam: microphone on, source $MIC_SOURCE_NAME (\"$MIC_LABEL\")"
+    else
+      echo "phonecam: microphone off"
+    fi
+    if mic_source_loaded; then
+      echo "phonecam: the virtual source is available:"
+      pactl list short sources 2>/dev/null | awk -v s="$MIC_SOURCE_NAME" '$2 == s { print "phonecam:   " $2 }'
+    else
+      echo "phonecam: the virtual source is not available (the stream does not run)"
+    fi
+    return 0
+  fi
+
+  case "$value" in
+  on | off) ;;
+  *) die "usage: phonecam mic [on|off]" ;;
+  esac
+
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$value" >"$MIC_FILE"
+  echo "phonecam: microphone $value"
+
+  local pid
+  if pid=$(running_pid); then
+    cmd_stop
+    cmd_start
+  else
+    echo "phonecam: no camera stream runs. Start it with: phonecam start"
+  fi
+}
+
+cmd_mirror() {
+  local value="${1:-}"
+
+  if [[ -z $value ]]; then
+    if mirror_on; then
+      echo "phonecam: mirror on"
+    else
+      echo "phonecam: mirror off"
+    fi
+    echo "phonecam: the picture goes to the application as $(capture_orientation) (rotation $(rotation))"
+    return 0
+  fi
+
+  case "$value" in
+  on | off) ;;
+  toggle)
+    if mirror_on; then value=off; else value=on; fi
+    ;;
+  *) die "usage: phonecam mirror [on|off|toggle]" ;;
+  esac
+
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$value" >"$MIRROR_FILE"
+  echo "phonecam: mirror $value"
+
+  local pid
+  if pid=$(running_pid); then
+    cmd_stop
+    cmd_start
+  else
+    echo "phonecam: no camera stream runs. Start it with: phonecam start"
+  fi
+}
+
+cmd_rotate() {
+  local value="${1:-}"
+  case "$value" in
+  0 | 90 | 180 | 270 | flip0 | flip90 | flip180 | flip270) ;;
+  "") die "usage: phonecam rotate <0|90|180|270|flip0|flip90|flip180|flip270>" ;;
+  *) die "invalid rotation '$value'" ;;
+  esac
+
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$value" >"$ROTATION_FILE"
+  echo "phonecam: rotation $value"
+
+  local pid
+  if pid=$(running_pid); then
+    cmd_stop
+    cmd_start
+  else
+    echo "phonecam: no camera stream runs. Start it with: phonecam start"
+  fi
+}
+
+cmd_status() {
+  local pid
+  if pid=$(running_pid); then
+    echo "phonecam: running (pid $pid), camera $(camera_id), orientation $(capture_orientation)"
+  else
+    echo "phonecam: not running, camera $(camera_id), orientation $(capture_orientation)"
+  fi
+  if mic_on; then
+    echo "phonecam: microphone on ($MIC_SOURCE_NAME)"
+  else
+    echo "phonecam: microphone off"
+  fi
+  echo "phonecam: device $DEVICE"
+  if [[ -c $DEVICE ]]; then
+    v4l2-ctl -d "$DEVICE" --info 2>/dev/null | sed -n 's/^/phonecam: /p' || true
+  else
+    echo "phonecam: the device does not exist. Run: phonecam-setup"
+  fi
+  if command -v adb >/dev/null; then
+    echo "phonecam: phone $(adb get-state 2>/dev/null || echo 'not connected')"
+  fi
+}
+
+# Find the device for every command. The test costs one system call while
+# /dev/video10 exists, so this does not slow down the polling of the widget.
+resolve_device >/dev/null 2>&1 || true
+
+case "${1:-}" in
+start) cmd_start ;;
+stop) cmd_stop ;;
+status) cmd_status ;;
+camera) cmd_camera "${2:-}" ;;
+mic) cmd_mic "${2:-}" ;;
+mirror) cmd_mirror "${2:-}" ;;
+rotate) cmd_rotate "${2:-}" ;;
+preview) cmd_preview ;;
+run) stream ;;
+# For scripts and for the front-end. This command prints nothing and reports
+# the state through the exit status.
+is-running) running_pid >/dev/null ;;
+# For the front-end (the wheel): use the next rotation value.
+cycle-rotation)
+  case "$(rotation)" in
+  0) cmd_rotate 90 ;;
+  90) cmd_rotate 180 ;;
+  180) cmd_rotate 270 ;;
+  270) cmd_rotate 0 ;;
+  flip0) cmd_rotate flip90 ;;
+  flip90) cmd_rotate flip180 ;;
+  flip180) cmd_rotate flip270 ;;
+  flip270) cmd_rotate flip0 ;;
+  *) cmd_rotate 0 ;;
+  esac
+  ;;
+# For the front-end (the wheel down): use the previous rotation value.
+prev-rotation)
+  case "$(rotation)" in
+  0) cmd_rotate 270 ;;
+  90) cmd_rotate 0 ;;
+  180) cmd_rotate 90 ;;
+  270) cmd_rotate 180 ;;
+  flip0) cmd_rotate flip270 ;;
+  flip90) cmd_rotate flip0 ;;
+  flip180) cmd_rotate flip90 ;;
+  flip270) cmd_rotate flip180 ;;
+  *) cmd_rotate 0 ;;
+  esac
+  ;;
+help | --help | -h | "") usage ;;
+*)
+  usage >&2
+  exit 1
+  ;;
+esac

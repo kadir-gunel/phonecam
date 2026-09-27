@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# phonecam-setup - install or repair the virtual camera used by phonecam.
+#
+# Run this command after a package or kernel update if the virtual camera is
+# missing. It needs root for the kernel module, so it asks for the password in
+# a terminal window when it runs from a graphical session.
+#
+# This command stops the camera stream and the preview window of this user
+# first. They hold the video device, and the root part of the installation
+# sends no signal to a process.
+#
+set -euo pipefail
+
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+
+# The script setup-v4l2loopback.sh is next to this command in the plugin
+# directory, and in the bundle when the installer put this command into
+# ~/.local/bin. Accept both layouts.
+setup=""
+for candidate in "$here/../setup-v4l2loopback.sh" \
+                 "${XDG_DATA_HOME:-$HOME/.local/share}/phonecam/setup-v4l2loopback.sh"; do
+  if [[ -f $candidate ]]; then
+    setup=$(cd -- "$(dirname -- "$candidate")" && pwd)/$(basename "$candidate")
+    break
+  fi
+done
+
+[[ -n $setup ]] || {
+  echo "phonecam-setup: the script setup-v4l2loopback.sh is missing." >&2
+  echo "phonecam-setup: install the plugin again, or run the script from" >&2
+  echo "phonecam-setup: ~/.local/share/phonecam/ directly." >&2
+  exit 1
+}
+
+# --- stop the programs of this user -----------------------------------------
+# This part runs as the user, before the password. A signal here can only reach
+# a process of this user, also when the process number is used again.
+"$here/phonecam" stop >/dev/null 2>&1 || true
+pkill -u "$(id -u)" -f 'ffplay .*-window_title phonecam preview' 2>/dev/null || true
+
+# The preview window ends by itself when the stream stops. Wait for it, because
+# it holds the video device, and then let the root part remove the module.
+for _ in $(seq 1 15); do
+  pgrep -u "$(id -u)" -f 'ffplay .*-window_title phonecam preview' >/dev/null 2>&1 || break
+  sleep 1
+done
+
+# --- the root part ----------------------------------------------------------
+# Two ways to ask for the password, in this order:
+#   1. a terminal that runs this command, with sudo,
+#   2. the polkit dialog of the desktop (GNOME).
+if [[ -t 0 ]]; then
+  exec sudo "$setup"
+fi
+
+if command -v pkexec >/dev/null 2>&1; then
+  exec pkexec "$setup"
+fi
+
+echo "phonecam-setup: no program asks for the password." >&2
+echo "phonecam-setup: run this command in a terminal:" >&2
+echo "phonecam-setup:   sudo $setup" >&2
+exit 1
