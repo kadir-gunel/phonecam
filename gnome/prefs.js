@@ -14,7 +14,7 @@ export default class PhoneCamPreferences extends ExtensionPreferences {
 
         const page = new Adw.PreferencesPage({
             title: 'PhoneCam',
-            icon_name: 'camera-web-symbolic',
+            icon_name: 'phone-symbolic',
         });
 
         const engineGroup = new Adw.PreferencesGroup({

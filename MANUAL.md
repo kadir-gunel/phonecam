@@ -54,6 +54,10 @@ The top panel shows a camera icon (the install is in
 | Restart PipeWire | Let PipeWire find the camera, for portal applications |
 | Set up the virtual camera | Build the kernel module (asks for the password) |
 
+GNOME also shows its own camera icon in the panel while an application uses a
+camera. That icon is a privacy feature of GNOME. This widget shows an icon of
+a telephone instead, so the user can tell the two icons apart.
+
 The wheel over the icon turns the picture: up uses the next rotation, down the
 previous one. The icon takes the attention colour of the theme while the stream
 runs, and the normal colour while the stream is off.

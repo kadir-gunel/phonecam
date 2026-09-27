@@ -104,6 +104,17 @@ section 7 of [../MANUAL.md](../MANUAL.md).
 The keyboard shortcut is empty at the start. Set it in the preferences, for
 example to `<Super><Shift>o`.
 
+### The two camera icons of the panel
+
+GNOME Shell shows its own camera icon in the panel while an application uses a
+camera. That icon is a privacy feature of GNOME and it is not a part of this
+widget. The user cannot turn it off.
+
+The widget shows an icon of a telephone instead, because the theme draws
+`camera-web-symbolic` and `camera-video-symbolic` with equal pixels. Thus the
+two icons are not equal. The widget icon takes the attention colour of the
+theme while the stream runs.
+
 ## Settings
 
 | Setting | Default | Meaning |

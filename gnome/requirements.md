@@ -80,7 +80,7 @@ the commands of the engine.
 
 | ID | Requirement |
 |---|---|
-| REQ-DISP-001 | The panel button SHALL show the symbolic icon `camera-web-symbolic`, and it SHALL use the theme class `system-status-icon`. |
+| REQ-DISP-001 | The panel button SHALL show the symbolic icon `phone-symbolic` and the theme class `system-status-icon`. It SHALL NOT show `camera-web-symbolic` or `camera-video-symbolic`: GNOME Shell shows the first icon in the panel while an application uses a camera, the theme draws both icons with equal pixels, and the user must tell the two icons apart. |
 | REQ-DISP-002 | The panel button SHALL show the state: the mouth of the menu SHALL hold the text `PhoneCam` and a second line with the state. |
 | REQ-DISP-003 | The panel button SHALL use the attention colour of the theme while the stream runs (REQ-DISP-017 of the Basecamp Widget specification: `#ff7800` for the dark style, `#e01b24` for the light style). |
 | REQ-DISP-004 | The menu SHALL hold these rows in this order: the state, `Start the stream` or `Stop the stream`, the submenu `Turn the picture`, `Mirror`, `Microphone`, the submenu `Camera`, `Preview window`, the state of the phone, one row for each problem, `Set up the virtual camera`, and the footer rows `Refresh` and `Settings`. |

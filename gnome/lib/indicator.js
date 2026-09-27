@@ -25,7 +25,11 @@ import {
 import {PhoneCamService, SETTLING_SECONDS} from './service.js';
 import {planMenu} from './state.js';
 
-const PANEL_ICON_NAME = 'camera-web-symbolic';
+/* The icon is a telephone. The theme draws `camera-web-symbolic` and
+   `camera-video-symbolic` with equal pixels, and GNOME Shell shows
+   `camera-web-symbolic` in the panel while an application uses a camera. Thus
+   a camera icon for this widget would look like the indicator of GNOME. */
+const PANEL_ICON_NAME = 'phone-symbolic';
 const KEYBINDING_NAME = 'toggle-shortcut';
 const SETUP_TIMEOUT_SECONDS = 60;
 
@@ -98,7 +102,7 @@ class PhoneCamIndicator extends PanelMenu.Button {
         this._panelBox = new St.BoxLayout({style_class: 'phonecam-panel-box'});
         this._icon = new St.Icon({
             icon_name: PANEL_ICON_NAME,
-            fallback_icon_name: 'camera-video-symbolic',
+            fallback_icon_name: 'camera-photo-symbolic',   /* not camera-web: see above */
             style_class: 'system-status-icon',
         });
         this._panelBox.add_child(this._icon);
