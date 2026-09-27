@@ -8,7 +8,7 @@ The camera of the OnePlus 5 is a webcam for this computer.
 |------|----------|
 | `/dev/video10` | The video device. Its name is "PhoneCam Camera". Every program that uses a webcam finds it. |
 | `phonecam` | The control command, in the repository (section 11). |
-| The panel of GNOME | The same control in the top panel (section 3). |
+| The widget of GNOME | The same control in the system menu of the shell, with an optional icon in the top panel (section 3). |
 | "PhoneCam" | The sound of the phone microphone, as a microphone of the computer. |
 | `phonecam-setup` | The repair command, in the repository (section 11). It builds the kernel module again, and it puts the root part in `/usr/local/lib/phonecam/`. |
 
@@ -28,7 +28,7 @@ Do these steps:
 Do step 2 before step 3. The video device uses `exclusive_caps=1`. Therefore an
 application finds the camera only while the stream runs.
 
-The panel of GNOME runs the command in the directory of the extension. A
+The widget of GNOME runs the command in the directory of the extension. A
 terminal can use the short name with the alias from section 10.
 
 Command form:
@@ -38,10 +38,13 @@ Command form:
     phonecam status     show the state, the device, the camera and the rotation
     phonecam camera     show the camera in use and the cameras of the phone
 
-## 3. The panel of GNOME
+## 3. The widget of GNOME
 
-The top panel shows a camera icon (the install is in
-[gnome/README.md](gnome/README.md)). A click on the icon opens the menu.
+The widget of GNOME sits in the system menu of the shell (the quick settings
+menu). Open that menu: the row with the title "PhoneCam" holds the state, and a
+click on the row starts or stops the stream. The small arrow at the right of
+the row opens the menu. The optional icon in the top panel shows the same state
+(the install is in [gnome/README.md](gnome/README.md)).
 
 | Row | Result |
 |-----|--------|
@@ -54,13 +57,18 @@ The top panel shows a camera icon (the install is in
 | Restart PipeWire | Let PipeWire find the camera, for portal applications |
 | Set up the virtual camera | Build the kernel module (asks for the password) |
 
-GNOME also shows its own camera icon in the panel while an application uses a
-camera. That icon is a privacy feature of GNOME. This widget shows an icon of
-a telephone instead, so the user can tell the two icons apart.
+The icon of the toggle is a telephone, and the optional icon of the panel is the
+same telephone. GNOME also shows its own camera icon in the panel while an
+application uses a camera. That icon is a privacy feature of GNOME. The widget
+shows a telephone instead, so the user can tell the two icons apart.
 
-The wheel over the icon turns the picture: up uses the next rotation, down the
-previous one. The icon takes the attention colour of the theme while the stream
-runs, and the normal colour while the stream is off.
+The wheel over the row of the system menu, or over the icon of the panel, turns
+the picture: up uses the next rotation, down the previous one. The icon takes
+the attention colour of the theme while the stream runs, and the normal colour
+while the stream is off.
+
+While the stream runs, a small green light sits over the icon of the row of the
+system menu.
 
 A keyboard shortcut starts and stops the stream. Set it in the preferences of
 the widget, for example to `<Super><Shift>o`. The value is empty at the start,
@@ -205,8 +213,8 @@ systemctl --user restart pipewire
 ```
 
 The node appears in the list of PipeWire as `PhoneCam Camera (V4L2)`, and the
-application finds the camera. The menu of the panel of GNOME has the row
-`Restart PipeWire (for portal applications)` for this step. The row appears
+application finds the camera. The menu of the widget in the system menu has the
+row `Restart PipeWire (for portal applications)` for this step. The row appears
 only while the stream runs and PipeWire holds no node of the camera.
 
 Note: the package `libcamera` is not necessary for the camera of the phone. It
@@ -219,7 +227,7 @@ the phone go through the kernel and PipeWire.
 | Problem | Cause | Solution |
 |---------|-------|----------|
 | The camera is not in the camera list of the application. | The stream does not run. The video device reports the capture ability only while the stream runs. | Run `phonecam start`. Open the camera list of the application again. |
-| The application "Camera" (Snapshot) shows no camera, and the stream runs. | That application asks the camera portal, and the portal gets its camera from PipeWire. PipeWire read the list of the video devices while the stream was stopped, so it holds no node of the camera. | Start the stream, then run `systemctl --user restart pipewire`, or use the row `Restart PipeWire` of the panel of GNOME. See section 7. |
+| The application "Camera" (Snapshot) shows no camera, and the stream runs. | That application asks the camera portal, and the portal gets its camera from PipeWire. PipeWire read the list of the video devices while the stream was stopped, so it holds no node of the camera. | Start the stream, then run `systemctl --user restart pipewire`, or use the row `Restart PipeWire` of the widget in the system menu. See section 7. |
 | `phonecam: no phone in adb state 'device'` | The cable is loose. The phone waits for the permission for USB debugging. | Connect the cable again. Unlock the phone. Agree to the question about USB debugging. |
 | The picture is not upright. | The rotation value does not agree with the position of the phone. | Do section 6. |
 | `phonecam: /dev/video10 is missing` | The kernel module is not loaded. This occurs after a kernel update. | Run `phonecam-setup`. Type the password in the terminal window. The command puts the root part in `/usr/local/lib/phonecam/` first. |
@@ -230,7 +238,7 @@ the phone go through the kernel and PipeWire.
 | `phonecam camera 9` and the stream does not start. | The phone has no camera with this number. | Show the cameras with `phonecam camera`. Set a correct number and run `phonecam start`. |
 | `adb devices` shows no phone and a restart does not help. | Two adb servers hold the interface of the phone. | The command `phonecam start` repairs this. If the problem continues, run `adb kill-server` and `phonecam start`. |
 | The camera picture stops during a conference. | A USB error, or the phone stopped the camera. | Run `phonecam start` again. |
-| `phonecam rotate` answers "no camera stream runs" and the picture does not turn, although the camera picture is on. The panel of GNOME shows "Stopped" at the same time. | The pid file of the stream was absent, and the engine and the widget hold the state of the stream in that file only. A start that is too slow removes the file, and the file lives in the runtime directory. | Corrected in this version: the engine also finds the process of scrcpy, and it writes the pid file again. With an older version, run `phonecam stop` and `phonecam start` again. |
+| `phonecam rotate` answers "no camera stream runs" and the picture does not turn, although the camera picture is on. The widget in the system menu shows "Stopped" at the same time. | The pid file of the stream was absent, and the engine and the widget hold the state of the stream in that file only. A start that is too slow removes the file, and the file lives in the runtime directory. | Corrected in this version: the engine also finds the process of scrcpy, and it writes the pid file again. With an older version, run `phonecam stop` and `phonecam start` again. |
 
 ## 9. Change the default values
 
@@ -313,7 +321,8 @@ On the other computer, do these steps:
 4. Connect the phone with the USB cable.
 5. Unlock the phone. Agree to the question about USB debugging. The phone asks
    this question for each new computer.
-6. Click the camera icon in the panel, or run `phonecam start`.
+6. Open the system menu of the shell and click the row "PhoneCam", or run
+   `phonecam start`.
 7. Look at the picture with `phonecam preview` (section 6).
 
 To remove everything from a computer, remove the widget and the module, then,
@@ -352,7 +361,7 @@ The repository holds all files:
         README.md                       the installation guide
         MANUAL.md                       this manual
         LICENSE                         the license (GPL-3.0-or-later)
-        preview.png                     the screenshot of the panel
+        preview.png                     the screenshot of the panel; it shows the old icon of the widget and it needs a new capture
 
 The installer of the widget puts the engine, the setup command, the module
 script, and its configuration into the directory of the widget:

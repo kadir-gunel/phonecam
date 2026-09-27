@@ -22,9 +22,8 @@ holds no test, no document, and no tool of the repository.
 3. The form or the page of the extension asks for a version number. Version 1
    is in review on the site, so the next upload uses `2`.
 4. The form or the page asks for the license. Give `GPL-3.0-or-later`.
-5. Add a screenshot of the panel and a screenshot of the open menu. A person
-   must take the screenshot of the open menu: a program cannot click the panel
-   button on this workstation (CON-005 of the specification).
+5. Add a screenshot of the system menu with the row of the widget, and a
+   screenshot of the open menu of the widget. A person must take them.
 6. Write the note for the reviewer (below).
 7. Send the form. A reviewer reads the extension before the publication.
 
@@ -32,6 +31,19 @@ The site runs its own automatic check on each upload (`Shexli`). Read its report
 on the review page and correct what it finds. Version 1 had two findings, and
 both were true: a synchronous read of a file (`EGO-X-004`) and a compiled schema
 in the package (`EGO-P-006`). Both are corrected in version 2.
+
+## The place of the widget
+
+The widget moved from its own panel icon into a row of the standard system menu
+(GNOME Quick Settings), as the extensions Caffeine and tailscale-gnome-qs do. The
+setting `Show the panel icon` also puts the icon into the panel; it is off at the
+start.
+
+The version plan: version 1 is in review on the site. Version 2 holds the two
+corrections of the automatic check and is kept beside the repository as
+`../phonecam-v2.shell-extension.zip`. Version 3 holds this move. If the corrected
+build goes up first, the move uses version 3; if it does not, the move uses
+version 2.
 
 ## The note for the reviewer
 

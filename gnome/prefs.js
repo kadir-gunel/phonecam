@@ -42,6 +42,15 @@ export default class PhoneCamPreferences extends ExtensionPreferences {
         });
         settings.bind('poll-interval', pollRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         behaviourGroup.add(pollRow);
+
+        const panelRow = new Adw.SwitchRow({
+            title: 'Show the icon in the panel',
+            subtitle: 'The widget then sits in the panel and in the system menu. ' +
+                'The default is the system menu only.',
+        });
+        settings.bind('show-panel-icon', panelRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        behaviourGroup.add(panelRow);
+
         behaviourGroup.add(this._shortcutRow(settings));
         page.add(behaviourGroup);
 

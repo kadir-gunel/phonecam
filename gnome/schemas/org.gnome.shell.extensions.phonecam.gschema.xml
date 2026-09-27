@@ -18,6 +18,11 @@
       <summary>Poll interval</summary>
       <description>Time between two reads of the state of the stream, in seconds. The widget reads each second for 12 seconds after an action.</description>
     </key>
+    <key name="show-panel-icon" type="b">
+      <default>false</default>
+      <summary>Show the icon in the panel</summary>
+      <description>Show the icon of the widget in the top panel as well. The widget then sits in the panel and in the system menu. The default is false: the widget sits in the system menu only.</description>
+    </key>
     <key name="toggle-shortcut" type="as">
       <default>[]</default>
       <summary>Keyboard shortcut</summary>

@@ -10,8 +10,10 @@
 #   - test programs for scrcpy and adb, and
 #   - a headless shell.
 #
-# The test reads the menu through the accessibility interface. It needs
-# at-spi2-core and python3-gi.
+# The test reads the row of the widget in the system menu and its menu through
+# the accessibility interface, and it reads the icon of the widget in the panel
+# with the D-Bus call org.gnome.Shell.Eval. It needs at-spi2-core and
+# python3-gi.
 
 set -u
 
@@ -50,6 +52,54 @@ fail() {
     echo "--- engine calls:"
     cat "$TMP/calls.log" 2>/dev/null | tail -20
     exit 1
+}
+
+# Run one expression in the private shell. The test session has no pointer, so
+# the test asks the shell to open the system menu, as a user does with a click.
+# The shell runs with --unsafe-mode, which permits the D-Bus call
+# org.gnome.Shell.Eval.
+shell_eval() {
+    local reply
+    if ! reply=$(gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
+        --method org.gnome.Shell.Eval "$1" 2>&1); then
+        echo "the shell did not answer the Eval call: $reply" >&2
+        return 1
+    fi
+    case $reply in
+        "(true,"*)
+            printf '%s\n' "$reply" | sed -n "s/^(true, '\(.*\)')$/\1/p"
+            ;;
+        *)
+            echo "the shell refused the Eval call: $reply" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Open the system menu (the quick settings menu of the shell), so that the
+# accessibility tree shows the row of the widget as the user sees it.
+open_system_menu() {
+    shell_eval "Main.panel.statusArea.quickSettings.menu.open(); 'opened'" > /dev/null ||
+        fail "the shell did not open the system menu"
+}
+
+# The number of icons of this widget in the box of the system menu. The panel
+# holds that icon only when the setting show-panel-icon asks for it.
+panel_icon_count() {
+    local expression="Main.panel.statusArea.quickSettings._indicators.get_children().filter(c => c.has_style_class_name('phonecam-panel-button')).length"
+    local result
+    result=$(shell_eval "$expression") ||
+        fail "the shell did not answer the question about the icon in the panel"
+    printf '%s\n' "$result"
+}
+
+# The width in pixels of the system menu button in the panel. The icon of the
+# widget adds its own width to that number when the setting asks for the icon.
+panel_width() {
+    local result
+    result=$(shell_eval "Main.panel.statusArea.quickSettings.get_width()") ||
+        fail "the shell did not answer the question about the width of the panel"
+    printf '%s\n' "$result"
 }
 
 # Change the state of the test engine to "the stream runs". The widget reads
@@ -194,7 +244,10 @@ REGISTRY_PID=$!
 sleep 2
 
 # --- shell ------------------------------------------------------------------
-gnome-shell --headless --wayland --no-x11 --virtual-monitor 1600x1000 \
+# --unsafe-mode opens the D-Bus call org.gnome.Shell.Eval. The test uses that
+# call to open the system menu and to read the icon of the widget in the panel,
+# because the test session has no pointer and cannot click the panel.
+gnome-shell --unsafe-mode --headless --wayland --no-x11 --virtual-monitor 1600x1000 \
     > "$TMP/shell.log" 2>&1 &
 SHELL_PID=$!
 echo "started gnome-shell (pid $SHELL_PID)"
@@ -229,6 +282,8 @@ fi
 # The test PipeWire holds no source of our camera at the start, so the row
 # "Restart PipeWire" must appear while the stream runs.
 if [ "${PHONECAM_SMOKE_DUMP:-0}" = 1 ]; then
+    open_system_menu
+    sleep 1
     python3 "$root/tools/a11y-tree.py" --wait 8 --dump
     echo "--- the test engine starts the stream"
     start_test_stream
@@ -237,10 +292,48 @@ if [ "${PHONECAM_SMOKE_DUMP:-0}" = 1 ]; then
     exit 0
 fi
 
+# --- the system menu holds the widget ---------------------------------------
+echo "--- the test opens the system menu"
+open_system_menu
+sleep 1
+
 python3 "$root/tools/a11y-tree.py" --wait 8 --check --state stopped \
-    --problems "$device_problem" --phone yes \
-    \
+    --problems "$device_problem" --phone yes --panel-icon absent \
     --state-line "camera 1 · 0 · microphone on" || fail "the menu test failed for the state stopped"
+
+# --- the setting show-panel-icon --------------------------------------------
+# The widget is a row of the system menu. The panel holds an icon of the widget
+# only when the setting asks for it, and the default is false.
+echo "--- the panel shows no icon of the widget (show-panel-icon is false)"
+[ "$(panel_icon_count)" = 0 ] ||
+    fail "the panel holds the icon although show-panel-icon is false"
+width_without=$(panel_width)
+echo "the panel button is $width_without px wide without the icon"
+
+echo "--- the setting show-panel-icon is true: the panel shows the icon"
+gsettings --schemadir "$target/schemas" set org.gnome.shell.extensions.phonecam \
+    show-panel-icon true
+sleep 2
+[ "$(panel_icon_count)" = 1 ] ||
+    fail "the panel holds no icon although show-panel-icon is true"
+width_with=$(panel_width)
+[ "$width_with" -gt "$width_without" ] ||
+    fail "the icon did not widen the panel ($width_without px then $width_with px)"
+echo "the panel button is $width_with px wide with the icon: the icon adds" \
+    "$((width_with - width_without)) px"
+[ "$((width_with - width_without))" -le 30 ] ||
+    fail "the icon of the panel is too wide: $((width_with - width_without)) px"
+python3 "$root/tools/a11y-tree.py" --wait 4 --check --state stopped \
+    --problems "$device_problem" --phone yes --panel-icon present \
+    --state-line "camera 1 · 0 · microphone on" ||
+    fail "the menu test failed with the icon in the panel"
+
+echo "--- the setting show-panel-icon is false again"
+gsettings --schemadir "$target/schemas" set org.gnome.shell.extensions.phonecam \
+    show-panel-icon false
+sleep 2
+[ "$(panel_icon_count)" = 0 ] ||
+    fail "the panel keeps the icon although show-panel-icon is false again"
 
 # --- the stream starts: change the state of the engine ----------------------
 echo "--- the test engine starts the stream"
@@ -248,7 +341,7 @@ start_test_stream
 
 python3 "$root/tools/a11y-tree.py" --wait 9 --check --state streaming \
     --problems "$device_problem" --phone yes --checked "Mirror" \
-    --expect-pipewire-row yes \
+    --expect-pipewire-row yes --panel-icon absent \
     --state-line "camera 2 · flip90 · microphone off" || fail "the menu test failed for the state streaming"
 
 # --- PipeWire finds the camera: the row goes away ---------------------------
@@ -258,7 +351,7 @@ cat > "$TMP/pipewire.json" <<JSON
 JSON
 python3 "$root/tools/a11y-tree.py" --wait 9 --check --state streaming \
     --problems "$device_problem" --phone yes --checked "Mirror" \
-    --expect-pipewire-row no \
+    --expect-pipewire-row no --panel-icon absent \
     --state-line "camera 2 · flip90 · microphone off" ||
     fail "the row Restart PipeWire stays although PipeWire holds the camera"
 
@@ -330,4 +423,4 @@ left=$(pgrep -f "$target/bin/phonecam" | wc -l)
 [ "$left" = 0 ] || fail "an engine process is still running after disable"
 echo "disabled without a leftover process"
 
-echo "PASS: the widget is active, shows both states, and reads only the state"
+echo "PASS: the widget is a row of the system menu, shows both states, keeps the panel icon optional, and reads only the state"

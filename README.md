@@ -1,6 +1,7 @@
 # PhoneCam
 
-![PhoneCam in the panel of GNOME](preview.png)
+> The file `preview.png` shows the old icon of the widget in the panel. It needs
+> a new capture: the widget is now a row of the system menu of GNOME Shell.
 
 Use the camera and the microphone of an Android phone as a webcam and a
 microphone of this computer. The picture appears as the video device
@@ -8,10 +9,11 @@ microphone of this computer. The picture appears as the video device
 application can use it. The microphone appears as the audio source
 **PhoneCam**.
 
-The front-end is a panel indicator for GNOME Shell 50 and later (`gnome/`). It
-runs the engine `bin/phonecam`, which holds the state in `~/.config/phonecam`,
-so a command from the menu and a command from a terminal give the same
-result.
+The front-end is a row of the system menu (the quick settings menu) of GNOME
+Shell 50 and later (`gnome/`). A setting can also show an icon of the widget in
+the top panel. It runs the engine `bin/phonecam`, which holds the state in
+`~/.config/phonecam`, so a command from the menu and a command from a terminal
+give the same result.
 
 ## How it works
 
@@ -110,11 +112,13 @@ The details are in [gnome/README.md](gnome/README.md).
 
 ## Use
 
-The GNOME front-end has every command in its menu: the state, the start and
-the stop, the rotation, the mirror, the microphone, the camera, the preview
-window, and the setup of the virtual camera. The wheel over the panel icon
-turns the picture, and a keyboard shortcut starts and stops the stream (set it
-in the preferences; the value is empty at the start).
+The GNOME front-end is a row of the system menu; a click on the row starts or
+stops the stream, and its arrow opens the menu with every command: the state,
+the start and the stop, the rotation, the mirror, the microphone, the camera,
+the preview window, and the setup of the virtual camera. The wheel over the row,
+or over the optional icon of the panel, turns the picture, and a keyboard
+shortcut starts and stops the stream (set it in the preferences; the value is
+empty at the start).
 
 From a terminal, the engine lives in the directory of the front-end. Add an
 alias to `~/.bashrc`:
@@ -144,8 +148,10 @@ alias phonecam="$HOME/Projects/phonecam/bin/phonecam"
 
 The smoke test starts a separate GNOME Shell with a private configuration and a
 private extension directory, and it puts a test engine in place of
-`bin/phonecam`. It reads the panel and the menu through the accessibility
-interface. It does not change the session of the user.
+`bin/phonecam`. It opens the system menu of the shell with the D-Bus call
+`org.gnome.Shell.Eval`, and it reads the row of the widget in that menu, its
+menu, and the optional icon of the panel through the accessibility interface. It
+does not change the session of the user.
 
 ## Remove
 

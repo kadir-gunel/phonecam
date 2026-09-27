@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Read the menu of the PhoneCam panel widget through the accessibility
-interface of the GNOME Shell instance under test.
+"""Read the row of the PhoneCam widget in the system menu (the quick settings
+menu of GNOME Shell) through the accessibility interface of the shell instance
+under test.
 
   --dump    Print the tree of the gnome-shell application.
-  --check   Test the panel button and the menu. Exit 1 on a failure.
+  --check   Test the row of the widget, its menu, and the optional icon of the
+            panel. Exit 1 on a failure.
 """
 
 import argparse
@@ -25,10 +27,11 @@ LIVE_LIGHT = 'The camera stream runs'
 
 
 class Node:
-    def __init__(self, role, name, accessible=None):
+    def __init__(self, role, name, accessible=None, parent=None):
         self.role = role
         self.name = name
         self.accessible = accessible
+        self.parent = parent
         self.children = []
 
     def finds(self, predicate):
@@ -57,7 +60,7 @@ def read(node, root):
         name = node.get_name()
     except Exception:
         return
-    item = Node(role, name, node)
+    item = Node(role, name, node, root)
     root.children.append(item)
     for child in children(node):
         read(child, item)
@@ -94,6 +97,46 @@ def dump(flat):
     print(f'({len(flat)} nodes)')
 
 
+def screen_extents(node):
+    """The extents of a node on the screen, or None when the node has none."""
+    try:
+        rect = node.accessible.get_extents(Atspi.CoordType.SCREEN)
+    except Exception:
+        return None
+    if rect.width <= 0 or rect.height <= 0:
+        return None
+    return rect
+
+
+def report_extents(applications):
+    """Print the measured extents of the actors of the widget. This is the
+    proof that the row sits in the system menu and that the panel holds the
+    icon of the widget only when the setting asks for it."""
+    for application in applications:
+        for node in application.finds(
+                lambda item: item.name and PANEL_RE.match(item.name)):
+            is_row = node.role == 'toggle button'
+            label = 'the row in the system menu' if is_row else 'the icon in the panel'
+            rect = screen_extents(node)
+            where = 'no extents' if rect is None else \
+                f'at {rect.x},{rect.y} {rect.width}x{rect.height}'
+            print(f'{label}: {node.name!r} {where}')
+
+            if is_row:
+                continue
+            # The panel button that carries the icon, for the width of the
+            # panel in the two states of the setting.
+            button = node.parent
+            while button is not None and button.role != 'menu':
+                button = button.parent
+            if button is None:
+                continue
+            rect = screen_extents(button)
+            where = 'no extents' if rect is None else \
+                f'at {rect.x},{rect.y} {rect.width}x{rect.height}'
+            print(f'the panel button that carries the icon: {button.name!r} {where}')
+
+
 def states_of(node):
     if node.accessible is None:
         return []
@@ -121,21 +164,35 @@ def check(applications, flat, expectations):
     labels = [(role, name) for _, role, name in flat]
     texts = [name for _, _, name in flat]
 
-    panel = None
+    # The widget is a row of the system menu (the quick settings menu of the
+    # shell). The row is in the accessibility tree whether the system menu is
+    # open or not, and the smoke test opens the system menu before this check.
+    row = None
     for _, role, name in flat:
-        match = PANEL_RE.match(name) if role == 'menu' else None
+        match = PANEL_RE.match(name) if role == 'toggle button' and name else None
         if match:
-            panel = match
+            row = match
             break
-    if panel is None:
-        failures.append('the panel button of the widget is missing')
+    if row is None:
+        failures.append('the row of the widget in the system menu is missing')
     else:
-        if panel.group(1) != expectations['state']:
-            failures.append(f'the panel button says {panel.group(1)}, expected {expectations["state"]}')
-        count = int(panel.group(2) or 0)
+        if row.group(1) != expectations['state']:
+            failures.append(f'the row of the widget says {row.group(1)}, '
+                            f'expected {expectations["state"]}')
+        count = int(row.group(2) or 0)
         if count != len(expectations['problems']):
-            failures.append(f'the panel button reports {count} problems, '
+            failures.append(f'the row of the widget reports {count} problems, '
                             f'expected {len(expectations["problems"])}')
+
+    # The icon of the widget in the panel. The widget shows that icon only
+    # when the setting show-panel-icon asks for it; the default is false.
+    panel_icons = [name for _, role, name in flat
+                   if role == 'panel' and name and PANEL_RE.match(name)]
+    if expectations['panel_icon'] == 'present' and not panel_icons:
+        failures.append('the panel holds no icon of the widget')
+    if expectations['panel_icon'] == 'absent' and panel_icons:
+        failures.append(f'the panel holds an icon of the widget ({panel_icons[0]!r}) '
+                        f'although the setting show-panel-icon is false')
 
     # The light of the running stream. The tree of the shell holds the actor
     # in the two states, even when the shell does not draw it, so the check
@@ -144,9 +201,9 @@ def check(applications, flat, expectations):
                    for node in application.finds(lambda item: item.name == LIVE_LIGHT)]
     light_shown = any({'VISIBLE', 'SHOWING'} <= set(states_of(node)) for node in light_nodes)
     if expectations['state'] == 'streaming' and not light_shown:
-        failures.append(f'the panel button does not show the light {LIVE_LIGHT!r}')
+        failures.append(f'the row of the widget does not show the light {LIVE_LIGHT!r}')
     if expectations['state'] == 'stopped' and light_shown:
-        failures.append(f'the panel button shows the light {LIVE_LIGHT!r} '
+        failures.append(f'the row of the widget shows the light {LIVE_LIGHT!r} '
                         f'although the stream is stopped')
 
     for required in ['PhoneCam', expectations['toggle'], 'Turn the picture', 'Mirror',
@@ -232,6 +289,7 @@ def main():
     parser.add_argument('--phone', choices=['yes', 'no'], default='no')
     parser.add_argument('--checked', default='')
     parser.add_argument('--expect-pipewire-row', choices=['yes', 'no'], default='no')
+    parser.add_argument('--panel-icon', choices=['present', 'absent', 'any'], default='any')
     args = parser.parse_args()
 
     applications, flat = collect(args.wait)
@@ -248,6 +306,7 @@ def main():
         'phone': args.phone == 'yes',
         'checked': [item for item in args.checked.split(';') if item],
         'pipewire_row': args.expect_pipewire_row == 'yes',
+        'panel_icon': args.panel_icon,
     }
     # The first read of the state is asynchronous, so wait for its row.
     deadline = time.monotonic() + 20
@@ -255,6 +314,7 @@ def main():
         deadline, lambda tree: any(name.startswith('Updated ') for _, _, name in tree))
 
     failures = check(applications, flat, expectations)
+    report_extents(applications)
     print(f'{len(flat)} accessibility nodes, {len(failures)} failure(s)')
     for failure in failures:
         print(f'FAIL {failure}')

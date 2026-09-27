@@ -1,9 +1,10 @@
 # PhoneCam for GNOME Shell
 
-The GNOME Shell front-end of PhoneCam. It shows the camera stream in the top
-panel and it starts and stops that stream. The engine is the command
-`bin/phonecam` of this repository, so a command from the menu and a command
-from a terminal have the same result.
+The GNOME Shell front-end of PhoneCam. It shows the camera stream as a row of
+the system menu (the quick settings menu) of the shell and it starts and stops
+that stream. A setting can also show an icon of the widget in the top panel.
+The engine is the command `bin/phonecam` of this repository, so a command from
+the menu and a command from a terminal have the same result.
 
 Tested on GNOME Shell 50.5 (Wayland). The extension uses the API of GNOME
 Shell 45 and later.
@@ -54,8 +55,10 @@ Then:
 
 ## Use
 
-A click on the panel icon opens the menu. The menu holds the state and every
-command of the engine:
+The widget sits in the system menu (the quick settings menu). The row with the
+title `PhoneCam` holds the state; a click on the row starts or stops the stream,
+and the small arrow at the right of the row opens the menu. The menu holds the
+state and every command of the engine:
 
 | Row | Result |
 |---|---|
@@ -71,14 +74,16 @@ command of the engine:
 
 Two more controls:
 
-- The wheel over the panel icon turns the picture, as the wheel of the bar
-  widget does.
+- The wheel over the row of the system menu, or over the optional icon of the
+  panel, turns the picture, as the wheel of the bar widget does.
 - A keyboard shortcut starts and stops the stream. Set it in the preferences
   (for example `<Super><Shift>o`). The value is empty at the start, so no
   shortcut is taken from another program.
 
-While the stream runs, the panel icon takes the attention colour of the theme
-(`#ff7800` in the dark style, `#e01b24` in the light style).
+While the stream runs, the icon of the row takes the attention colour of the
+theme (`#ff7800` in the dark style, `#e01b24` in the light style), and a small
+green light sits at its lower right corner. The optional icon of the panel takes
+the same colour.
 
 ### Before an application looks for the camera
 
@@ -97,9 +102,10 @@ section 7 of [../MANUAL.md](../MANUAL.md).
 
 | Control | Result |
 |---|---|
-| Click on the panel icon | Opens the menu |
+| Click on the row of the system menu | Starts or stops the stream |
+| Click on the arrow of the row | Opens the menu |
 | Row `Start the stream` / `Stop the stream` | Starts or stops the stream |
-| Wheel over the panel icon | Next or previous rotation |
+| Wheel over the row, or over the icon of the panel | Next or previous rotation |
 | Keyboard shortcut | Starts or stops the stream |
 | Row `Preview window` | Opens the picture in a window; the same row closes it |
 
@@ -112,10 +118,10 @@ GNOME Shell shows its own camera icon in the panel while an application uses a
 camera. That icon is a privacy feature of GNOME and it is not a part of this
 widget. The user cannot turn it off.
 
-The widget shows an icon of a telephone instead, because the theme draws
-`camera-web-symbolic` and `camera-video-symbolic` with equal pixels. Thus the
-two icons are not equal. The widget icon takes the attention colour of the
-theme while the stream runs.
+The icon of the row in the system menu, and the optional icon of the panel, are
+a telephone, because the theme draws `camera-web-symbolic` and
+`camera-video-symbolic` with equal pixels. Thus the icons are not equal. They
+take the attention colour of the theme while the stream runs.
 
 ## Settings
 
@@ -124,6 +130,7 @@ theme while the stream runs.
 | The phonecam command | the copy in the extension directory | The engine. |
 | The setup command | the copy in the extension directory | The command of the menu row `Set up the virtual camera`. |
 | Read the state every | 5 s | The poll time. After an action the widget reads each second for 12 seconds. |
+| Show the icon in the panel | off | The widget also shows its icon in the top panel. |
 | Keyboard shortcut | empty | Starts and stops the stream. |
 
 ## Tests
@@ -140,10 +147,14 @@ engine of this repository for the commands that need no phone.
 The smoke test starts a separate GNOME Shell with a private D-Bus session, a
 private configuration, and a private extension directory. It puts a test
 engine in place of `bin/phonecam` and test programs in place of `scrcpy` and
-`adb`, so the test needs no phone and no kernel module. It reads the panel and
-the menu through the accessibility interface, and it checks both states
-(stopped and streaming), the problem rows, the switches, and the state line.
-The test does not change the session of the user.
+`adb`, so the test needs no phone and no kernel module. It opens the system menu
+with the D-Bus call `org.gnome.Shell.Eval` (the private shell runs with
+`--unsafe-mode`), because the test session has no pointer. It reads the row of
+the widget in the system menu, its menu, and the optional icon of the panel
+through the accessibility interface, and it checks both states (stopped and
+streaming), the problem rows, the switches, the state line, and the two values
+of the setting `Show the icon in the panel`. The test does not change the
+session of the user.
 
 ## Limits
 
@@ -166,7 +177,7 @@ The test does not change the session of the user.
 | Path | Content |
 |---|---|
 | `extension.js` | The entry point of the extension. |
-| `lib/indicator.js` | The panel button, the menu, the wheel, and the shortcut. |
+| `lib/indicator.js` | The row in the system menu, the menu, the wheel, and the shortcut. |
 | `lib/service.js` | The state reads, the queue, and the child processes. |
 | `lib/cli.js` | The commands of the engine. |
 | `lib/state.js` | The state and the plan of the menu. |

@@ -1,7 +1,7 @@
 {
   "uuid": "phonecam@kadir-gunel.github.io",
   "name": "PhoneCam",
-  "description": "Uses the camera and the microphone of an Android phone as a webcam and a microphone. Starts and stops the stream of the PhoneCam engine and shows its state in the top panel. The engine (scrcpy, adb, v4l2loopback, PipeWire) must be installed.",
+  "description": "Uses the camera and the microphone of an Android phone as a webcam and a microphone. Starts and stops the stream of the PhoneCam engine and shows its state in the system menu of the shell. An optional icon in the top panel shows the same state. The engine (scrcpy, adb, v4l2loopback, PipeWire) must be installed.",
   "shell-version": [
     "50"
   ],

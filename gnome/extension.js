@@ -2,7 +2,6 @@
 // PhoneCam for GNOME Shell: the camera and the microphone of the phone as a
 // webcam and a microphone of this computer.
 
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {PhoneCamIndicator} from './lib/indicator.js';
@@ -14,7 +13,9 @@ export default class PhoneCamExtension extends Extension {
             openPreferences: () => this.openPreferences(),
             directory: this.dir,
         });
-        Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
+        // The widget is a row of the system menu (the quick settings menu of
+        // the shell), not a panel button of its own.
+        this._indicator.enable();
     }
 
     disable() {

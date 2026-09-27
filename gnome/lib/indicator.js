@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The panel indicator of PhoneCam: the icon, the menu, the wheel, and the
-// keyboard shortcut.
+// The widget of PhoneCam: the row in the system menu, the menu, the wheel, and
+// the keyboard shortcut.
 //
 // The widget shows the state and it sends commands to the engine. The engine
 // (bin/phonecam of this repository) does all the work, so the state is also
@@ -16,8 +16,8 @@ import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as QuickSettings from 'resource:///org/gnome/shell/ui/quickSettings.js';
 
 import {
     nextRotationArgv, previewArgv, previousRotationArgv, timeoutFor,
@@ -31,7 +31,10 @@ import {planMenu} from './state.js';
    a camera icon for this widget would look like the indicator of GNOME. */
 const PANEL_ICON_NAME = 'phone-symbolic';
 const KEYBINDING_NAME = 'toggle-shortcut';
+const SHOW_PANEL_ICON_KEY = 'show-panel-icon';
 const SETUP_TIMEOUT_SECONDS = 60;
+/* The light of the running stream. A screen reader finds it by this name. */
+const LIVE_LIGHT_NAME = 'The camera stream runs';
 
 /** One line of text that shortens with "…" when it is too long. */
 function labelLine(text, styleClass) {
@@ -60,10 +63,59 @@ function lastLine(text) {
     return lines.length > 0 ? lines[lines.length - 1] : '';
 }
 
+/** The small green light of the running stream. */
+function liveLight() {
+    const light = new St.Widget({
+        style_class: 'phonecam-live-light',
+        visible: false,
+        x_expand: true,
+        y_expand: true,
+        x_align: Clutter.ActorAlign.END,
+        y_align: Clutter.ActorAlign.END,
+    });
+    light.accessible_name = LIVE_LIGHT_NAME;
+    return light;
+}
+
+/** The light sits over the lower right corner of an icon, so the two widgets
+ *  share one bin layout and the light does not widen the icon. BinLayout
+ *  honours the alignment of a child only when that child expands, and it
+ *  centers a child that does not expand (see clutter-bin-layout.c). Thus the
+ *  light expands, and its alignment puts it in the lower right corner of the
+ *  icon. */
+function iconBox(icon) {
+    const box = new St.Widget({
+        layout_manager: new Clutter.BinLayout(),
+        style_class: 'phonecam-icon-box',
+    });
+    box.add_child(icon);
+    return box;
+}
+
+/** Put the light over the icon of the toggle. The toggle holds the icon in a
+ *  private box, so the widget puts its own box in place of the icon. */
+function lightOverToggle(toggle, light) {
+    const contents = toggle.get_child()?.get_first_child();
+    const box = contents?.get_child();
+    const icon = box?.get_first_child();
+    if (!icon)
+        return null;
+
+    /* The icon comes out of its box first: a widget cannot have two parents. */
+    box.remove_child(icon);
+    /* The class of the theme gives the icon its size, in the same way as the
+       icon of the panel; the colour rules of the stylesheet name it. */
+    icon.add_style_class_name('system-status-icon');
+    const holder = iconBox(icon);
+    holder.add_child(light);
+    box.insert_child_at_index(holder, 0);
+    return holder;
+}
+
 export const PhoneCamIndicator = GObject.registerClass(
-class PhoneCamIndicator extends PanelMenu.Button {
+class PhoneCamIndicator extends QuickSettings.SystemIndicator {
     _init(settings, {openPreferences, directory}) {
-        super._init(0.5, 'PhoneCam', false);
+        super._init();
 
         this._settings = settings;
         this._openPreferences = openPreferences;
@@ -79,18 +131,20 @@ class PhoneCamIndicator extends PanelMenu.Button {
         this._keybinding = null;
         this._setupRunning = false;
         this._renderedKey = null;
+        this._indicatorIndex = 0;
 
-        /* The theme gives a panel button 12 px at each side and each symbolic
-           icon 10 px more. This class makes the two icons of this project sit
-           close. See the rule in stylesheet.css. */
+        /* The widget is no longer a panel button of its own: it is a row of
+           the system menu, and its optional icon sits in the box of that menu.
+           See the two rules of this class in stylesheet.css. */
         this.add_style_class_name('phonecam-panel-button');
 
         this._buildPanel();
+        this._buildToggle();
+
         this._applySettings();
         this._connectSettings();
 
         St.Settings.get().connectObject('notify::color-scheme', () => this._syncStyle(), this);
-        this._syncStyle();
 
         this.menu.actor.add_style_class_name('phonecam-menu');
         this.menu.connectObject('open-state-changed', (_menu, open) => {
@@ -98,44 +152,81 @@ class PhoneCamIndicator extends PanelMenu.Button {
                 this._onMenuOpen();
         }, this);
 
+        this._syncStyle();
         this._render();
         this._scheduleRefresh();
         this.refresh();
     }
 
-    _buildPanel() {
-        this._panelBox = new St.BoxLayout({style_class: 'phonecam-panel-box'});
-        this._icon = new St.Icon({
-            icon_name: PANEL_ICON_NAME,
-            fallback_icon_name: 'camera-photo-symbolic',   /* not camera-web: see above */
-            style_class: 'system-status-icon',
-        });
-        /* The light sits over the lower right corner of the icon, so the two
-           widgets share one bin layout and the light does not widen the panel
-           button. See the rule in stylesheet.css. */
-        this._iconBox = new St.Widget({
-            layout_manager: new Clutter.BinLayout(),
-            style_class: 'phonecam-icon-box',
-        });
-        /* BinLayout honours the alignment of a child only when that child
-           expands, and it centers a child that does not expand (see
-           clutter-bin-layout.c). Thus the light expands, and its alignment
-           puts it in the lower right corner of the icon. */
-        this._liveLight = new St.Widget({
-            style_class: 'phonecam-live-light',
-            visible: false,
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.END,
-            y_align: Clutter.ActorAlign.END,
-        });
-        this._liveLight.accessible_name = 'The camera stream runs';
-        this._iconBox.add_child(this._icon);
-        this._iconBox.add_child(this._liveLight);
-        this._panelBox.add_child(this._iconBox);
-        this.add_child(this._panelBox);
+    /** Register the widget with the system menu. The panel shows the icon of
+     *  the widget only when the user asks for it. */
+    enable() {
+        const quickSettings = Main.panel.statusArea.quickSettings;
+        quickSettings.addExternalIndicator(this);
+        this._indicatorIndex = quickSettings._indicators.get_children().indexOf(this);
+        this._syncPanelIcon();
+    }
 
-        this.connect('scroll-event', (_actor, event) => this._onScroll(event));
+    /** The icon of the panel, with the box that holds the colour class. The
+     *  icon is a child of the widget from the start; the widget removes the
+     *  whole indicator from the panel when the user turns the icon off. */
+    _buildPanel() {
+        /* `_addIndicator()` gives the icon the class of the theme, and it keeps
+           the visibility of the indicator in step with its children. */
+        this._panelIcon = this._addIndicator();
+        this._panelIcon.icon_name = PANEL_ICON_NAME;
+        this._panelIcon.fallback_icon_name = 'camera-photo-symbolic';   /* not camera-web: see above */
+
+        this.remove_child(this._panelIcon);
+        this._panelIconBox = iconBox(this._panelIcon);
+        /* A screen reader reads the widget in the panel as the state of the
+           stream, as it read the panel button before this change. */
+        this.accessible_name = 'PhoneCam';
+        this.add_child(this._panelIconBox);
+        this._syncIndicatorsVisible();
+    }
+
+    /** The row of the system menu: the state, the icon, and the whole menu.
+     *  The menu of the row is the menu of the widget. */
+    _buildToggle() {
+        this._Toggle = new QuickSettings.QuickMenuToggle({
+            title: 'PhoneCam',
+            iconName: PANEL_ICON_NAME,
+            toggleMode: true,
+        });
+        this._Toggle.add_style_class_name('phonecam-toggle');
+        this.quickSettingsItems.push(this._Toggle);
+
+        this._liveLight = liveLight();
+        this._toggleIconBox = lightOverToggle(this._Toggle, this._liveLight);
+
+        this._Toggle.connect('clicked', () => this._toggle());
+        this._Toggle.connect('scroll-event', (_actor, event) => this._onScroll(event));
+
+        // The rows of the menu live in the menu of the row, so a poll cannot
+        // close an open submenu under the pointer of the user.
+        this.menu = this._Toggle.menu;
+    }
+
+    /** Show or hide the icon of the widget in the panel. */
+    _syncPanelIcon() {
+        const quickSettings = Main.panel.statusArea.quickSettings;
+        if (!quickSettings)
+            return;
+        const show = this._settings.get_boolean(SHOW_PANEL_ICON_KEY);
+        try {
+            if (show) {
+                if (this.get_parent() === null) {
+                    const count = quickSettings._indicators.get_n_children();
+                    quickSettings._indicators.insert_child_at_index(
+                        this, Math.min(this._indicatorIndex, count));
+                }
+            } else if (this.get_parent() === quickSettings._indicators) {
+                quickSettings._indicators.remove_child(this);
+            }
+        } catch (error) {
+            logError(error, 'PhoneCam: the panel icon');
+        }
     }
 
     /** @returns {string|null} The engine that ships next to the extension. */
@@ -165,6 +256,7 @@ class PhoneCamIndicator extends PanelMenu.Button {
         }, this);
         this._settings.connectObject('changed::setup', () => this._applySettings(), this);
         this._settings.connectObject('changed::poll-interval', () => this._scheduleRefresh(), this);
+        this._settings.connectObject(`changed::${SHOW_PANEL_ICON_KEY}`, () => this._syncPanelIcon(), this);
         // The shortcut lives in this schema, so Main.wm reads the same file.
         this._settings.connectObject(`changed::${KEYBINDING_NAME}`, () => this._updateKeybinding(), this);
     }
@@ -185,7 +277,7 @@ class PhoneCamIndicator extends PanelMenu.Button {
     /** The icon takes the attention colour while the stream runs. */
     _syncStyle() {
         const dark = St.Settings.get().color_scheme !== 'prefer-light';
-        for (const widget of [this._panelBox, this.menu.actor]) {
+        for (const widget of [this, this._Toggle, this.menu.actor]) {
             widget.remove_style_class_name(dark ? 'phonecam-light' : 'phonecam-dark');
             widget.add_style_class_name(dark ? 'phonecam-dark' : 'phonecam-light');
         }
@@ -207,18 +299,30 @@ class PhoneCamIndicator extends PanelMenu.Button {
         });
     }
 
+    /** The row of the system menu shows the state, and the light marks the
+     *  running stream. */
     _updatePanel() {
         const running = this._state?.running === true;
-        if (running)
-            this._panelBox.add_style_class_name('phonecam-live');
-        else
-            this._panelBox.remove_style_class_name('phonecam-live');
-        this._liveLight.visible = running;
 
         const parts = [running ? 'streaming' : 'stopped'];
         if (this._problems.length > 0)
             parts.push(`${this._problems.length} problem${this._problems.length === 1 ? '' : 's'}`);
-        this.accessible_name = `PhoneCam: ${parts.join(', ')}`;
+        const state = parts.join(', ');
+
+        this._Toggle.subtitle = state;
+        this._Toggle.checked = running;
+        this._Toggle.accessible_name = `PhoneCam: ${state}`;
+        this.accessible_name = `PhoneCam: ${state}`;
+        this._liveLight.visible = running;
+
+        for (const box of [this._panelIconBox, this._toggleIconBox]) {
+            if (!box)
+                continue;
+            if (running)
+                box.add_style_class_name('phonecam-live');
+            else
+                box.remove_style_class_name('phonecam-live');
+        }
     }
 
     /** Read the state of the engine and the state of the phone. */
@@ -433,6 +537,26 @@ class PhoneCamIndicator extends PanelMenu.Button {
         this._settings?.disconnectObject(this);
         St.Settings.get().disconnectObject(this);
         this.menu?.disconnectObject(this);
+
+        /* The widget is a child of the box of the system menu and of the grid
+           of that menu. Both come out at disable time. */
+        try {
+            const quickSettings = Main.panel.statusArea.quickSettings;
+            if (quickSettings && this.get_parent() === quickSettings._indicators)
+                quickSettings._indicators.remove_child(this);
+        } catch (error) {
+            logError(error, 'PhoneCam: the panel icon at disable time');
+        }
+        if (this._Toggle !== null) {
+            this._Toggle.get_parent()?.remove_child(this._Toggle);
+            this._Toggle._menuManager?.destroy();
+        }
+        this.menu?.destroy();
+        this.menu = null;
+        this._Toggle?.destroy();
+        this._Toggle = null;
+        this.quickSettingsItems = [];
+
         super.destroy();
     }
 });

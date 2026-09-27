@@ -6,23 +6,26 @@
  * for its own rows only.
  */
 
-/* The panel button reserves 8 px at each side, not 22 px: the theme asks for
- * 12 px for the button and 10 px for the symbolic icon, which leaves 44 px
- * between the two panel icons of this project. The PhoneCam icon and the
- * Basecamp icon sit next to each other in the panel. */
-#panel .panel-button.phonecam-panel-button {
+/* The icon of the widget sits in the box of the system menu, and it no longer
+ * belongs to a panel button of its own. Thus the selector names the class of
+ * the widget. The theme gives a panel button 12 px at each side and each
+ * symbolic icon 10 px more, which leaves 44 px between the two panel icons of
+ * this project. The PhoneCam icon and the Basecamp icon sit next to each other
+ * in the panel. */
+#panel .phonecam-panel-button {
     -natural-hpadding: 4px;
     -minimum-hpadding: 4px;
 }
 
-#panel .panel-button.phonecam-panel-button .system-status-icon {
+#panel .phonecam-panel-button .system-status-icon {
     padding: 0 2px;
     margin: 0 2px;
 }
 
-/* The light marks the running stream. It sits over the icon, so it adds no
- * width to the panel button. The green is the same in both styles. */
-#panel .panel-button.phonecam-panel-button .phonecam-live-light {
+/* The light marks the running stream. It sits over the icon of the row of the
+ * system menu, so it adds no width to that icon. The green is the same in both
+ * styles. */
+.phonecam-live-light {
     min-width: 0.45em;
     min-height: 0.45em;
     border-radius: 999px;

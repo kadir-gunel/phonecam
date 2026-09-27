@@ -10,28 +10,34 @@ Status: Released for implementation
 ### 1.1 Subject
 
 A GNOME Shell extension for GNOME Shell 50 and later. The extension shows the
-PhoneCam camera stream in the top panel and it controls that stream. The
-extension identifier is `phonecam@kadir-gunel.github.io`. The extension lives in the
+PhoneCam camera stream as a row of the system menu (the quick settings menu) of
+GNOME Shell and it controls that stream. A setting can also show an icon of the
+widget in the top panel. The extension identifier is
+`phonecam@kadir-gunel.github.io`. The extension lives in the
 `gnome/` directory of this repository.
 
 ### 1.2 Purpose
 
 The engine (`bin/phonecam`) is a command line program that does not use a
 desktop environment. This specification covers the front-end for GNOME Shell
-50 and later: it shows the state of the stream in the top panel and it sends
-the commands of the engine.
+50 and later: it shows the state of the stream in the system menu, it can show
+an icon of the widget in the top panel, and it sends the commands of the
+engine.
 
 ### 1.3 In scope
 
-- One panel indicator with an icon that shows the state of the stream.
+- One row in the system menu: a `QuickSettings.QuickMenuToggle` that shows the
+  state, and a click on it starts or stops the stream.
+- An optional icon of the widget in the top panel, with the setting
+  `show-panel-icon` (the default value is off).
 - One drop-down menu with the state and with every command of the engine.
 - A click on a menu row runs one command of the engine.
-- The wheel over the panel button turns the picture (the wheel of the bar
-  widget).
+- The wheel over the row of the system menu, or over the icon of the panel,
+  turns the picture (the wheel of the bar widget).
 - One keyboard shortcut that starts and stops the stream (the optional
   keybinding of the manual).
-- A preferences window: the path of the engine, the poll time, and the
-  keyboard shortcut.
+- A preferences window: the path of the engine, the poll time, the icon of the
+  panel, and the keyboard shortcut.
 - A menu item that runs the setup of the virtual camera with the polkit
   dialog of GNOME.
 - Tests: unit tests and a smoke test in a separate GNOME Shell instance.
@@ -80,31 +86,32 @@ the commands of the engine.
 
 | ID | Requirement |
 |---|---|
-| REQ-DISP-001 | The panel button SHALL show the symbolic icon `phone-symbolic` and the theme class `system-status-icon`. It SHALL NOT show `camera-web-symbolic` or `camera-video-symbolic`: GNOME Shell shows the first icon in the panel while an application uses a camera, the theme draws both icons with equal pixels, and the user must tell the two icons apart. |
-| REQ-DISP-002 | The panel button SHALL show the state: the mouth of the menu SHALL hold the text `PhoneCam` and a second line with the state. |
-| REQ-DISP-003 | The panel button SHALL use the attention colour of the theme while the stream runs (REQ-DISP-017 of the Basecamp Widget specification: `#ff7800` for the dark style, `#e01b24` for the light style). |
-| REQ-DISP-004 | The menu SHALL hold these rows in this order: the state, `Start the stream` or `Stop the stream`, the submenu `Turn the picture`, `Mirror`, `Microphone`, the submenu `Camera`, `Preview window`, the state of the phone, one row for each problem, `Set up the virtual camera`, and the footer rows `Refresh` and `Settings`. |
+| REQ-DISP-001 | The widget SHALL be one `QuickSettings.SystemIndicator` with one `QuickSettings.QuickMenuToggle` in the system menu (the quick settings menu of GNOME Shell). The toggle SHALL show the symbolic icon `phone-symbolic` and the theme class `system-status-icon`. The optional icon of the panel SHALL show the same symbolic icon. The widget SHALL NOT show `camera-web-symbolic` or `camera-video-symbolic`: GNOME Shell shows the first icon in the panel while an application uses a camera, the theme draws both icons with equal pixels, and the user must tell the two icons apart. |
+| REQ-DISP-002 | The toggle SHALL show the state: the `title` SHALL be `PhoneCam` and the `subtitle` SHALL be `streaming` or `stopped`, with `, <number> problems` when the engine reports a problem. The row SHALL be the widget in the system menu. The menu of the toggle SHALL hold the state line as its first row. |
+| REQ-DISP-003 | The icon of the toggle SHALL use the attention colour of the theme while the stream runs, as the optional icon of the panel does (REQ-DISP-017 of the Basecamp Widget specification: `#ff7800` for the dark style, `#e01b24` for the light style). |
+| REQ-DISP-004 | The menu of the toggle SHALL hold these rows in this order: the state, `Start the stream` or `Stop the stream`, the submenu `Turn the picture`, `Mirror`, `Microphone`, the submenu `Camera`, `Preview window`, the state of the phone, one row for each problem, `Set up the virtual camera`, and the footer rows `Refresh` and `Settings`. |
 | REQ-DISP-005 | The submenu `Turn the picture` SHALL hold the values 0, 90, 180, and 270. The current value SHALL have the check ornament. |
 | REQ-DISP-006 | The submenu `Camera` SHALL hold the camera ids of the phone with a short name: 0 main camera on the back, 1 front camera, 2 camera on the back with the largest sensor, and 3 camera on the back. The current value SHALL have the check ornament. |
 | REQ-DISP-007 | The rows `Mirror` and `Microphone` SHALL be switch rows. The switch SHALL show the value from the engine. A change of the switch SHALL run the engine. |
 | REQ-DISP-008 | The menu SHALL show a problem row with the exact command for the fix, or SHALL NOT show a problem row when no problem exists. The row of the phone SHALL hold the state of the phone: absent, `unauthorized`, or `offline`. |
 | REQ-DISP-009 | The menu SHALL show the time of the last state read. |
 | REQ-DISP-010 | The menu SHALL NOT be wider than 420 px. A long text SHALL end with "…". |
-| REQ-DISP-011 | The panel button SHALL reserve 8 px at each side, and it SHALL NOT take the 22 px of the theme: the rule `#panel .panel-button.phonecam-panel-button` SHALL set `-natural-hpadding: 4px` and `-minimum-hpadding: 4px`, and the rule `#panel .panel-button.phonecam-panel-button .system-status-icon` SHALL set `padding: 0 2px` and `margin: 0 2px`. The selector SHALL be at least as specific as the selector of the theme, because the shell can load the stylesheet of the theme after the stylesheet of the extension. The two panel icons of this project sit next to each other. |
-| REQ-DISP-012 | The panel button SHALL show a small green light while the stream runs, to show the user that the camera is on. The light SHALL be a child of the icon box `phonecam-icon-box` and it SHALL sit over the lower right corner of the icon. The light SHALL NOT widen the panel button. The light SHALL hold the accessible name `The camera stream runs`, so a screen reader finds it. The light SHALL be visible in the state `streaming` and hidden in the state `stopped`. The layout `Clutter.BinLayout` SHALL honour the alignment of the light: the light SHALL set `x_expand: true` and `y_expand: true` with `x_align: Clutter.ActorAlign.END` and `y_align: Clutter.ActorAlign.END`, because the layout centres a child that does not expand. The rule `#panel .panel-button.phonecam-panel-button .phonecam-live-light` SHALL draw the light with the colour `#33d17a` in the two styles. |
+| REQ-DISP-011 | The icon of the widget in the panel SHALL be narrow, and it SHALL NOT take the 22 px of the theme: the rule `#panel .phonecam-panel-button` SHALL set `-natural-hpadding: 4px` and `-minimum-hpadding: 4px`, and the rule `#panel .phonecam-panel-button .system-status-icon` SHALL set `padding: 0 2px` and `margin: 0 2px`. The selector SHALL be at least as specific as the selector of the theme, because the shell can load the stylesheet of the theme after the stylesheet of the extension. The two panel icons of this project sit next to each other. Measured in the smoke test: the icon adds 28 px to the system menu button of the panel. |
+| REQ-DISP-012 | The toggle SHALL show a small green light while the stream runs, to show the user that the camera is on. The light SHALL be a child of the icon box `phonecam-icon-box` and it SHALL sit over the lower right corner of the icon of the toggle. The light SHALL NOT widen that icon. The light SHALL hold the accessible name `The camera stream runs`, so a screen reader finds it. The light SHALL be visible in the state `streaming` and hidden in the state `stopped`. The layout `Clutter.BinLayout` SHALL honour the alignment of the light: the light SHALL set `x_expand: true` and `y_expand: true` with `x_align: Clutter.ActorAlign.END` and `y_align: Clutter.ActorAlign.END`, because the layout centres a child that does not expand. The rule `.phonecam-live-light` SHALL draw the light with the colour `#33d17a` in the two styles. |
+| REQ-DISP-013 | The widget SHALL hold the boolean setting `show-panel-icon`. The default value SHALL be false: the widget then lives only in the system menu, and the panel SHALL hold no icon of the widget. A true value SHALL show the icon of the widget in the box of the system menu button, next to the other indicators of the panel. The widget SHALL apply a change of that setting without a shell restart. |
 
 ### 4.3 Actions
 
 | ID | Requirement |
 |---|---|
-| REQ-ACT-001 | The row `Start the stream` SHALL run the engine with `start`. The row `Stop the stream` SHALL run the engine with `stop`. The menu SHALL show the row for the state that the engine does not have. |
+| REQ-ACT-001 | The row `Start the stream` SHALL run the engine with `start`. The row `Stop the stream` SHALL run the engine with `stop`. The menu SHALL show the row for the state that the engine does not have. A click on the toggle SHALL do the same as that row, and the `checked` state of the toggle SHALL be true while the stream runs. |
 | REQ-ACT-002 | A value in the submenu `Turn the picture` SHALL run the engine with `rotate <value>`. |
 | REQ-ACT-003 | A value in the submenu `Camera` SHALL run the engine with `camera <id>`. |
 | REQ-ACT-004 | The switch `Mirror` SHALL run the engine with `mirror on` or `mirror off`. |
 | REQ-ACT-005 | The switch `Microphone` SHALL run the engine with `mic on` or `mic off`. |
 | REQ-ACT-006 | The row `Preview window` SHALL run the engine with `preview`. The preview is a child process of the extension. The same row SHALL close an open preview. The extension SHALL stop that child process at disable time. |
 | REQ-ACT-007 | The row `Set up the virtual camera` SHALL run `bin/phonecam-setup`. That command SHALL use the polkit dialog of the session. |
-| REQ-ACT-008 | The wheel over the panel button SHALL run `cycle-rotation` (wheel up) or `prev-rotation` (wheel down). |
+| REQ-ACT-008 | The wheel over the toggle, or over the icon of the widget in the panel, SHALL run `cycle-rotation` (wheel up) or `prev-rotation` (wheel down). |
 | REQ-ACT-009 | A keyboard shortcut SHALL run `start` or `stop`, in the same way as the first row of the menu. The shortcut SHALL exist only when the setting is not empty. |
 | REQ-ACT-010 | The extension SHALL read the state again after each action. |
 | REQ-ACT-011 | The menu SHALL close after an action with a visible result (start, stop, preview). |
@@ -124,7 +131,7 @@ the commands of the engine.
 | ID | Requirement |
 |---|---|
 | REQ-PREF-001 | The preferences window SHALL use the GNOME `Adw` widgets. |
-| REQ-PREF-002 | The preferences window SHALL hold these controls: the path of the engine, the poll interval in seconds (1 to 60), and the keyboard shortcut. |
+| REQ-PREF-002 | The preferences window SHALL hold these controls: the path of the engine, the poll interval in seconds (1 to 60), the switch `Show the icon in the panel` (REQ-DISP-013), and the keyboard shortcut. |
 | REQ-PREF-003 | The extension SHALL apply each change without a shell restart. |
 
 ### 4.6 Portability and setup
@@ -151,7 +158,8 @@ the commands of the engine.
 
 | Control | Result |
 |---|---|
-| Click on the panel button | Opens the menu |
+| Click on the toggle in the system menu | Starts or stops the stream |
+| Click on the arrow of the toggle | Opens the menu of the widget |
 | Row `Start the stream` / `Stop the stream` | Starts or stops the stream |
 | Row `Turn the picture` | Sets the rotation to 0, 90, 180, or 270 |
 | Row `Mirror`, row `Microphone` | Switches the value, and starts the stream again |
@@ -159,18 +167,18 @@ the commands of the engine.
 | Row `Preview window` | Opens or closes the picture in a window |
 | Row `Restart PipeWire` | Lets PipeWire find the camera, for portal applications |
 | Row `Set up the virtual camera` | Builds the kernel module |
-| Wheel over the panel button | Next or previous rotation |
+| Wheel over the toggle, or over the icon of the panel | Next or previous rotation |
 | Keyboard shortcut | Starts or stops the stream |
 
-A click on a GNOME panel button opens its menu, so a click cannot carry an
-action of its own. Those actions are rows of the menu.
+A click on a row of the system menu carries the action of the toggle: it starts
+or stops the stream. The other actions are rows of the menu of the widget.
 
 ## 6. Verification
 
 | ID | Requirement | Verification method |
 |---|---|---|
 | VER-001 | REQ-ENG-001 to REQ-ENG-006, REQ-ACT-001 to REQ-ACT-005 | Unit test of the argument builder and of the read of the configuration files. |
-| VER-002 | REQ-DISP-001 to REQ-DISP-010, REQ-ACT-008 | Live test in a separate GNOME Shell instance with a test engine (the smoke test). The test reads the panel and the menu through the accessibility interface. |
+| VER-002 | REQ-DISP-001 to REQ-DISP-010, REQ-DISP-013, REQ-ACT-008 | Live test in a separate GNOME Shell instance with a test engine (the smoke test). The test reads the row of the widget in the system menu, its menu, and the optional icon of the panel through the accessibility interface, and it reads the presence of the icon in the panel with the D-Bus call `org.gnome.Shell.Eval` (the shell runs with `--unsafe-mode`). |
 | VER-003 | REQ-ACT-006, REQ-ACT-007, REQ-QA-002 | The smoke test counts the child processes and the timers after `disable()`. |
 | VER-004 | REQ-SET-003 | Test with the module of the kernel package and without sources in `/usr/src` (this workstation). |
 | VER-005 | REQ-REFR-001 to REQ-REFR-005 | The smoke test reads the record of the calls of the test engine. |
@@ -184,7 +192,7 @@ action of its own. Those actions are rows of the menu.
 |---|---|
 | CON-001 | This workstation has no `scrcpy` and no `adb`. A stream cannot run here. The extension shows the problem rows in that case, and the smoke test uses a test engine. |
 | CON-002 | The module `v4l2loopback` is available in the kernel package `linux-cachyos`, but it is not loaded and no `/dev/video*` exists. `setup-v4l2loopback.sh` needs a change (REQ-SET-003). |
-| CON-003 | The workstation has no program for the synthesis of pointer events. A click and a wheel turn cannot be automated. The smoke test reads the menu through the accessibility interface; the unit tests cover the command of each action. See the same constraint in the Basecamp Widget specification. |
+| CON-003 | The workstation has no program for the synthesis of pointer events. A click and a wheel turn cannot be automated. The smoke test opens the system menu with the D-Bus call `org.gnome.Shell.Eval` (the shell runs with `--unsafe-mode`) and it reads the row of the widget, its menu, and the optional icon of the panel through the accessibility interface; the unit tests cover the command of each action. See the same constraint in the Basecamp Widget specification. |
 | CON-004 | The polkit dialog of `pkexec` needs a user action. The smoke test uses a test `pkexec` that records the argument list. |
 | CON-005 | The engine takes the path of its configuration files from its own environment. The extension does not change that path, so an action from the menu and a command from a terminal have the same result. |
 
@@ -205,6 +213,7 @@ action of its own. Those actions are rows of the menu.
 
 | Revision | Date | Change |
 |---|---|---|
+| 14 | 2026-09-27 | Request of the user: the widget SHALL be a row of the system menu and not an icon of its own in the panel. Solution: `lib/indicator.js` now builds a `QuickSettings.SystemIndicator` with one `QuickSettings.QuickMenuToggle`. The `title` is `PhoneCam`, the `subtitle` is the state (`streaming` or `stopped`, with the number of problems), the `iconName` is `phone-symbolic`, and `checked` is true while the stream runs. A click on the toggle starts or stops the stream, as the first row of the menu does. The menu of the toggle holds the whole menu of the widget, and every row is unchanged, so REQ-DISP-004 to REQ-DISP-010 stay true. `Main.panel.statusArea.quickSettings.addExternalIndicator()` registers the indicator and the row. The new setting `show-panel-icon` (boolean, default false) puts the icon of the widget into the box of the system menu button; the preferences window holds a switch row for it (REQ-DISP-013, REQ-PREF-002). The light of the running stream moved from the panel button to the icon of the toggle (REQ-DISP-012). The two narrow rules of the stylesheet now name the class of the widget (`#panel .phonecam-panel-button`), because the widget is no longer a panel button of its own; the declarations are unchanged. `disable()` takes the widget, the menu of the toggle, the timers, and the child processes out, as before. Measured in the smoke test in a separate GNOME Shell 50.5: the widget is a `toggle button` with the accessible name `PhoneCam: stopped` at 1399,227 176x48 in the system menu (the test opened the menu with `org.gnome.Shell.Eval`, and the shell runs with `--unsafe-mode`); with the default setting the panel holds no icon of the widget; with `show-panel-icon` true the panel holds the icon at 1452,0 24x32, and the system menu button of the panel grows from 132 px to 160 px, so the icon adds 28 px (REQ-DISP-011). The light keeps the accessible name `The camera stream runs`. The smoke test now opens the system menu, reads the row of the widget in it, and reads the icon of the panel in both states of the setting. |
 | 13 | 2026-09-27 | Review of the site for version 1 (the review page 75604, the extension 11075). The automatic check Shexli reported two findings and both were correct. (a) `EGO-X-004`: `lib/service.js` read the configuration files of the engine with `GLib.file_get_contents`, which blocks the main loop of the shell and breaks REQ-QA-001. The read is asynchronous now, and the package promisifies `Gio.File.load_contents_async` at construction, because the shell does not promisify it: a plain call answers "At least 2 arguments required", and the call resolves with the contents and the etag (both measured with gjs). (b) `EGO-P-006`: the package held `schemas/gschemas.compiled`, which the guidelines forbid for GNOME 45 and later. `tools/pack.sh` no longer compiles the schema, so the package holds the XML only and the build of the site compiles it; `tools/install.sh` still compiles it for a local installation. Verified: 106 unit checks, the smoke test, and the package of version 2 without the compiled schema. |
 | 12 | 2026-09-27 | Review for the release on extensions.gnome.org. Finding (a): the guidelines mark the key `version` of `metadata.json` as deprecated and as set by the site; the key is gone from the metadata of both projects. Finding (b): the guidelines say that an extension MUST NOT hold copyrighted or trademarked content without the proof of the express permission of the owner; this project holds none, because its icon comes from the icon theme. Finding (c): the guidelines discourage external scripts and ask for GJS unless the use is necessary. The owner decided to submit the extension with the engine inside the package and to explain the reason in the note for the reviewer: the engine is also a standalone command line program, and the external programs scrcpy, adb, ffmpeg, and v4l2loopback do the heavy work. `RELEASING.md` holds the note, the steps of the upload, and the version rule. The identifier `phonecam@kadir-gunel.github.io` is free on the site: measured with the API of the site on 2026-09-27 (`/api/v1/extensions/?uuid=` answers 0), with the control of a published identifier that answers 1 and of an invented identifier that answers 0. The upload page sends a visitor without a session to the login page, so the release needs the account of the owner. |
 
