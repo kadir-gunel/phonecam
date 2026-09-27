@@ -14,7 +14,10 @@ holds no test, no document, and no tool of the repository.
 
 ## The upload
 
-1. Open <https://extensions.gnome.org/upload/> and log in.
+1. Open <https://extensions.gnome.org/upload/> and log in. A visitor without a
+   session lands on the login page, so the upload needs an account of the site.
+   Without an account, register first:
+   <https://extensions.gnome.org/accounts/register/>.
 2. Select the file `gnome/phonecam@kadir-gunel.github.io.shell-extension.zip`.
 3. The form or the page of the extension asks for a version number. This is
    the first upload, so use `1`.
