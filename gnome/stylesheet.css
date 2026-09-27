@@ -20,6 +20,15 @@
     margin: 0 2px;
 }
 
+/* The light marks the running stream. It sits over the icon, so it adds no
+ * width to the panel button. The green is the same in both styles. */
+#panel .panel-button.phonecam-panel-button .phonecam-live-light {
+    min-width: 0.45em;
+    min-height: 0.45em;
+    border-radius: 999px;
+    background-color: #33d17a;
+}
+
 /* The menu stays narrow. The labels then shorten with "…". */
 .phonecam-menu {
     max-width: 420px;

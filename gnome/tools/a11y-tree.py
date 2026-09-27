@@ -21,6 +21,7 @@ PANEL_RE = re.compile(r'^PhoneCam: (streaming|stopped)(?:, (\d+) problems?)?$')
 
 ROTATION_LABELS = ['0 (phone in landscape)', '90', '180', '270']
 FOOTER = ['Refresh', 'Settings']
+LIVE_LIGHT = 'The camera stream runs'
 
 
 class Node:
@@ -135,6 +136,18 @@ def check(applications, flat, expectations):
         if count != len(expectations['problems']):
             failures.append(f'the panel button reports {count} problems, '
                             f'expected {len(expectations["problems"])}')
+
+    # The light of the running stream. The tree of the shell holds the actor
+    # in the two states, even when the shell does not draw it, so the check
+    # reads the states of the actor: only a visible actor reaches the screen.
+    light_nodes = [node for application in applications
+                   for node in application.finds(lambda item: item.name == LIVE_LIGHT)]
+    light_shown = any({'VISIBLE', 'SHOWING'} <= set(states_of(node)) for node in light_nodes)
+    if expectations['state'] == 'streaming' and not light_shown:
+        failures.append(f'the panel button does not show the light {LIVE_LIGHT!r}')
+    if expectations['state'] == 'stopped' and light_shown:
+        failures.append(f'the panel button shows the light {LIVE_LIGHT!r} '
+                        f'although the stream is stopped')
 
     for required in ['PhoneCam', expectations['toggle'], 'Turn the picture', 'Mirror',
                      'Microphone', 'Camera', 'Preview window', 'Set up the virtual camera',

@@ -52,6 +52,17 @@ fail() {
     exit 1
 }
 
+# Change the state of the test engine to "the stream runs". The widget reads
+# this state, so the panel shows the light of the running stream.
+start_test_stream() {
+    mkdir -p "$XDG_CONFIG_HOME/phonecam"
+    : > "$XDG_CONFIG_HOME/phonecam/running"
+    printf '90\n' > "$XDG_CONFIG_HOME/phonecam/rotation"
+    printf '2\n' > "$XDG_CONFIG_HOME/phonecam/camera"
+    printf 'on\n' > "$XDG_CONFIG_HOME/phonecam/mirror"
+    printf 'off\n' > "$XDG_CONFIG_HOME/phonecam/mic"
+}
+
 [ -x "$(command -v gnome-shell)" ] || fail "gnome-shell is missing"
 [ -x /usr/lib/at-spi2-registryd ] || fail "at-spi2-registryd is missing"
 
@@ -204,6 +215,9 @@ fi
 # "Restart PipeWire" must appear while the stream runs.
 if [ "${PHONECAM_SMOKE_DUMP:-0}" = 1 ]; then
     python3 "$root/tools/a11y-tree.py" --wait 8 --dump
+    echo "--- the test engine starts the stream"
+    start_test_stream
+    python3 "$root/tools/a11y-tree.py" --wait 9 --dump
     echo "dump only, no check"
     exit 0
 fi
@@ -215,12 +229,7 @@ python3 "$root/tools/a11y-tree.py" --wait 8 --check --state stopped \
 
 # --- the stream starts: change the state of the engine ----------------------
 echo "--- the test engine starts the stream"
-mkdir -p "$XDG_CONFIG_HOME/phonecam"
-: > "$XDG_CONFIG_HOME/phonecam/running"
-printf '90\n' > "$XDG_CONFIG_HOME/phonecam/rotation"
-printf '2\n' > "$XDG_CONFIG_HOME/phonecam/camera"
-printf 'on\n' > "$XDG_CONFIG_HOME/phonecam/mirror"
-printf 'off\n' > "$XDG_CONFIG_HOME/phonecam/mic"
+start_test_stream
 
 python3 "$root/tools/a11y-tree.py" --wait 9 --check --state streaming \
     --problems "$device_problem" --phone yes --checked "Mirror" \

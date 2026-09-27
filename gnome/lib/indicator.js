@@ -110,7 +110,29 @@ class PhoneCamIndicator extends PanelMenu.Button {
             fallback_icon_name: 'camera-photo-symbolic',   /* not camera-web: see above */
             style_class: 'system-status-icon',
         });
-        this._panelBox.add_child(this._icon);
+        /* The light sits over the lower right corner of the icon, so the two
+           widgets share one bin layout and the light does not widen the panel
+           button. See the rule in stylesheet.css. */
+        this._iconBox = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
+            style_class: 'phonecam-icon-box',
+        });
+        /* BinLayout honours the alignment of a child only when that child
+           expands, and it centers a child that does not expand (see
+           clutter-bin-layout.c). Thus the light expands, and its alignment
+           puts it in the lower right corner of the icon. */
+        this._liveLight = new St.Widget({
+            style_class: 'phonecam-live-light',
+            visible: false,
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.END,
+        });
+        this._liveLight.accessible_name = 'The camera stream runs';
+        this._iconBox.add_child(this._icon);
+        this._iconBox.add_child(this._liveLight);
+        this._panelBox.add_child(this._iconBox);
         this.add_child(this._panelBox);
 
         this.connect('scroll-event', (_actor, event) => this._onScroll(event));
@@ -191,6 +213,7 @@ class PhoneCamIndicator extends PanelMenu.Button {
             this._panelBox.add_style_class_name('phonecam-live');
         else
             this._panelBox.remove_style_class_name('phonecam-live');
+        this._liveLight.visible = running;
 
         const parts = [running ? 'streaming' : 'stopped'];
         if (this._problems.length > 0)
