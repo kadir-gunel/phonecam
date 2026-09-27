@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 #
 # phonecam - use the OnePlus 5 camera as a webcam for video conferences.
 #
