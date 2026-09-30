@@ -9,6 +9,11 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+# The tree must hold no credential, no private address, and no personal path
+# (REQ-QA-006) before the tests read it.
+"$root/tools/secret-scan.sh"
+
 engine="$root/bin/phonecam"
 runtime=$(mktemp -d)
 fake=""

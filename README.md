@@ -141,10 +141,15 @@ alias phonecam="$HOME/Projects/phonecam/bin/phonecam"
 ## Tests
 
 ```sh
+./tools/secret-scan.sh              # Fails on a credential, a private address, or a personal path.
 ./tests/test-engine.sh              # The engine. No phone, no kernel module.
 ./gnome/tools/test.sh               # The unit tests of the widget.
 ./gnome/tools/shell-smoke-test.sh   # The widget in a separate GNOME Shell.
 ```
+
+`tests/test-engine.sh` and `gnome/tools/test.sh` run the scan first. It reads
+the files of the tree and the messages of the commits, and it never prints the
+value that it found.
 
 The smoke test starts a separate GNOME Shell with a private configuration and a
 private extension directory, and it puts a test engine in place of

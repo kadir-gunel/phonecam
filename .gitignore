@@ -3,3 +3,6 @@ gnome/schemas/gschemas.compiled
 __pycache__/
 *.pyc
 gschemas.compiled
+# Credential file of the Fizzy CLI, in case the CLI runs in this directory
+.fizzy.yaml
+.fizzy.yml
