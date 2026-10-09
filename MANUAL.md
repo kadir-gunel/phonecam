@@ -28,8 +28,9 @@ Do these steps:
 Do step 2 before step 3. The video device uses `exclusive_caps=1`. Therefore an
 application finds the camera only while the stream runs.
 
-The widget of GNOME runs the command in the directory of the extension. A
-terminal can use the short name with the alias from section 10.
+The widget of GNOME talks to the app over D-Bus, and the app runs the command
+`bin/phonecam`. A terminal can use the short name with the alias from
+section 10.
 
 Command form:
 
@@ -73,6 +74,10 @@ system menu.
 A keyboard shortcut starts and stops the stream. Set it in the preferences of
 the widget, for example to `<Super><Shift>o`. The value is empty at the start,
 so no shortcut is taken from another program.
+
+The preferences of the widget hold the read interval, the icon of the panel, and
+the keyboard shortcut. The widget holds no path of the engine and no path of the
+setup command: the engine and the setup commands come with the app.
 
 ## 4. Choose the camera of the phone
 
@@ -270,21 +275,25 @@ The project is a git repository:
 
     cd phonecam && git pull           update the code
 
-The widget of GNOME uses the copy of the engine in its own directory. The
-installer puts it there:
+The project has two parts. Install the app first, then the widget:
 
-    cd gnome && ./tools/install.sh    install again after an update
+    cd app && meson setup builddir && meson install -C builddir    install the app
+    cd ../gnome && ./tools/install.sh                              install the widget
+
+The app installs the engine and the setup command into
+`$prefix/share/phonecam-app/bin/`. The default prefix is `~/.local`, so the
+engine is at `~/.local/share/phonecam-app/bin/phonecam`. The widget is a
+front-end: it holds no engine and no setup command.
 
 To remove the widget, remove its directory:
 
     rm -rf ~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io
 
-The commands `phonecam` and `phonecam-setup` live in the `bin` directory of the
-repository, and the widget runs the copy in its own directory. For a terminal,
+The commands `phonecam` and `phonecam-setup` come with the app. For a terminal,
 add these aliases to `~/.bashrc`:
 
-    alias phonecam="$HOME/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io/bin/phonecam"
-    alias phonecam-setup="$HOME/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io/bin/phonecam-setup"
+    alias phonecam="$HOME/.local/share/phonecam-app/bin/phonecam"
+    alias phonecam-setup="$HOME/.local/share/phonecam-app/bin/phonecam-setup"
 
 ### Use the phone on another computer
 
@@ -299,10 +308,11 @@ On the other computer, do these steps:
    `v4l2loopback-dkms` with `dkms` only when the kernel package does not hold
    the module `v4l2loopback`.
 
-2. Get the code and install the widget:
+2. Get the code and install the app, then the widget:
 
        git clone https://github.com/kadir-gunel/phonecam
-       cd phonecam/gnome && ./tools/install.sh
+       cd phonecam/app && meson setup builddir && meson install -C builddir
+       cd ../gnome && ./tools/install.sh
 
    Then log out and log in again, and enable the widget:
 
@@ -356,19 +366,27 @@ The repository holds all files:
         setup-v4l2loopback.sh           the root part of the installation
         etc/modprobe.d/v4l2loopback.conf      the module options (source)
         etc/modules-load.d/v4l2loopback.conf  the load at boot (source)
-        gnome/                          the widget for GNOME Shell 50 and later
+        app/                            the app: the engine and the setup commands
+        gnome/                          the widget for GNOME Shell 51 and later: the front-end
         tests/                          the test of the engine
         README.md                       the installation guide
         MANUAL.md                       this manual
         LICENSE                         the license (GPL-3.0-or-later)
         preview.png                     the screenshot of the panel; it shows the old icon of the widget and it needs a new capture
 
-The installer of the widget puts the engine, the setup command, the module
-script, and its configuration into the directory of the widget:
+The installer of the app puts the engine, the setup command, the module script,
+and its configuration in the data directory:
 
-    ~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io/bin/
-        phonecam                        the control command
-        phonecam-setup                  the repair command
+    ~/.local/share/phonecam-app/        the app (the default prefix is ~/.local)
+        bin/phonecam                    the control command
+        bin/phonecam-setup              the repair command
+        main.js                         the D-Bus service
+        io.github.kadir_gunel.PhoneCam.xml  the interface of the D-Bus service
+        setup-v4l2loopback.sh           the root part of the installation
+        etc/                            the configuration of the module
+
+The widget holds no engine and no setup command. It is a front-end, and it
+talks to the app over D-Bus.
 
 The command `phonecam-setup` puts a copy of the module script and of its
 configuration with the owner root:
@@ -379,7 +397,7 @@ configuration with the owner root:
 
 The root part runs from that copy. A process of the user cannot change a file
 of `/usr/local/lib/phonecam/`. The command makes the copy again when a file of
-the widget differs from it.
+the app differs from it.
 
 These files control the device and the stream:
 

@@ -17,22 +17,6 @@ export default class PhoneCamPreferences extends ExtensionPreferences {
             icon_name: 'phone-symbolic',
         });
 
-        const engineGroup = new Adw.PreferencesGroup({
-            title: 'Engine',
-            description: 'The phonecam command does the work: scrcpy, adb, the virtual camera, ' +
-                'and the virtual microphone.',
-        });
-        engineGroup.add(this._pathRow(settings, 'engine', {
-            title: 'The phonecam command',
-            description: 'An empty value uses the copy in the directory of the extension.',
-        }));
-        engineGroup.add(this._pathRow(settings, 'setup', {
-            title: 'The setup command',
-            description: 'Used by the menu row "Set up the virtual camera". It asks for the ' +
-                'password with the polkit dialog.',
-        }));
-        page.add(engineGroup);
-
         const behaviourGroup = new Adw.PreferencesGroup({title: 'Behaviour'});
         const pollRow = new Adw.SpinRow({
             title: 'Read the state every',
@@ -57,16 +41,6 @@ export default class PhoneCamPreferences extends ExtensionPreferences {
         window.add(page);
         window.search_enabled = true;
         window.set_default_size(560, 520);
-    }
-
-    _pathRow(settings, key, {title, description}) {
-        const row = new Adw.EntryRow({title});
-        // An empty row lets the default value of the schema apply.
-        if (settings.get_string(key) !== '')
-            row.text = settings.get_string(key);
-        settings.bind(key, row, 'text', Gio.SettingsBindFlags.DEFAULT);
-        row.set_tooltip_text(description);
-        return row;
     }
 
     /**

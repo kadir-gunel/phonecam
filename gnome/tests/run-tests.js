@@ -5,8 +5,8 @@ import GLib from 'gi://GLib';
 import System from 'system';
 
 import {
-    ProcessRunner, cameraArgv, isRunningArgv, micArgv, mirrorArgv, nextRotationArgv,
-    previewArgv, previousRotationArgv, resolveProgram, rotateArgv, startArgv, statusArgv, stopArgv,
+    cameraArgv, isRunningArgv, micArgv, mirrorArgv, nextRotationArgv,
+    previewArgv, previousRotationArgv, rotateArgv, startArgv, statusArgv, stopArgv,
     timeoutFor,
 } from '../lib/cli.js';
 import * as state from '../lib/state.js';
@@ -52,14 +52,6 @@ equal('a mirror change has 75 seconds', timeoutFor(mirrorArgv(true)), 75);
 equal('a microphone change has 75 seconds', timeoutFor(micArgv(false)), 75);
 equal('an unknown command has the normal limit', timeoutFor(['no-such-verb']), 20);
 equal('an empty command has the normal limit', timeoutFor([]), 20);
-
-// --- Program lookup ---------------------------------------------------------
-// The engine of this repository is two levels above the tests directory.
-check('an absolute program is found',
-    resolveProgram(`${GLib.get_current_dir()}/../../bin/phonecam`) !== null);
-equal('a missing program gives null', resolveProgram('no-such-phonecam-command-xyz'), null);
-equal('an empty value gives null', resolveProgram('   '), null);
-check('sh is found on the path', resolveProgram('sh') !== null);
 
 // --- Files of the engine ----------------------------------------------------
 equal('a valid rotation', state.readValue('90\n', state.ROTATIONS, '0'), '90');
@@ -177,21 +169,16 @@ equal('the footer before the first read', planRunning.footer.updated, 'Not read 
 const planPreview = state.planMenu(state.stateFromFiles({}, {}), {previewRunning: true});
 equal('the preview row while the window is open', planPreview.preview.label, 'Preview window (open)');
 
-// --- The live engine of this repository -------------------------------------
-const engine = GLib.build_filenamev([GLib.get_current_dir(), '..', '..', 'bin', 'phonecam']);
-if (GLib.file_test(engine, GLib.FileTest.IS_EXECUTABLE)) {
-    const runner = new ProcessRunner(engine);
-    const running = await runner.run(isRunningArgv(), {timeoutSeconds: 20});
-    check('is-running gives an exit status', running.code === 0 || running.code === 1,
-        `code ${running.code}, stderr ${running.stderr}`);
-    const status = await runner.run(statusArgv(), {timeoutSeconds: 20});
-    check('status answers', status.stdout.includes('phonecam:'), status.stdout.slice(0, 120));
-    check('status reports the state', /phonecam: (not )?running/.test(status.stdout), status.stdout.slice(0, 120));
-    const bad = await runner.run(['no-such-verb'], {timeoutSeconds: 20});
-    check('an unknown verb is an error', bad.ok === false && bad.code === 1, `code ${bad.code}`);
-} else {
-    check('the engine is present', false, engine);
-}
+// --- The widget holds no script ---------------------------------------------
+// The review guidelines of extensions.gnome.org forbid scripts in a GNOME
+// Shell extension package. The engine and the setup commands come with the
+// PhoneCam app, so the widget directory holds neither.
+check('the widget holds no bin directory',
+    !GLib.file_test('../bin', GLib.FileTest.EXISTS));
+check('the widget holds no etc directory',
+    !GLib.file_test('../etc', GLib.FileTest.EXISTS));
+check('the widget holds no setup script',
+    !GLib.file_test('../setup-v4l2loopback.sh', GLib.FileTest.EXISTS));
 
 // --- Settings keys ----------------------------------------------------------
 const schema = (() => {

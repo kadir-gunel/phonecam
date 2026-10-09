@@ -2,32 +2,198 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Test the PhoneCam widget in a separate GNOME Shell instance.
 #
+# The repository holds two parts. The app (`app/`) owns the engine
+# (bin/phonecam) and the setup commands, and it serves them to the front-end on
+# the session bus. The widget (`gnome/`) is a front-end: it holds no script and
+# it reads the state from the app over D-Bus. This test covers the widget and
+# that conversation.
+#
 # The test does not change the session of the user:
-#   - a private D-Bus session, a private configuration, and a private
-#     extension directory,
-#   - a test engine in place of bin/phonecam, so the test needs no phone and
-#     no kernel module,
-#   - test programs for scrcpy and adb, and
+#   - a private D-Bus session, a private configuration, a private prefix, and a
+#     private extension directory,
+#   - the app installed into the private prefix, with a test engine in place of
+#     the real engine, so the test needs no phone and no kernel module,
+#   - test programs for scrcpy, adb, and pw-dump, and
 #   - a headless shell.
 #
 # The test reads the row of the widget in the system menu and its menu through
 # the accessibility interface, and it reads the icon of the widget in the panel
-# with the D-Bus call org.gnome.Shell.Eval. It needs at-spi2-core and
-# python3-gi.
+# with the D-Bus call org.gnome.Shell.Eval. It needs at-spi2-core, python3-gi,
+# and meson.
 
 set -u
-
-# Private D-Bus session: the real shell owns org.gnome.Shell on the session bus.
-if [ "${PHONECAM_SMOKE_INNER:-0}" != 1 ]; then
-    exec env PHONECAM_SMOKE_INNER=1 dbus-run-session -- "$0" "$@"
-fi
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 repo=$(CDPATH= cd -- "$root/.." && pwd)
 uuid=phonecam@kadir-gunel.github.io
-USER_BUS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
-REAL_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-TMP=$(mktemp -d)
+
+# --- the private environment, then the private bus ---------------------------
+# The bus daemon takes the environment at the moment of its start, and it
+# passes THAT environment to the services it activates. The app is such a
+# service of the bus, so the private XDG directories and the PATH with the test
+# programs must be in place before dbus-run-session starts the daemon. This
+# first pass prepares everything and exports it, and then it re-runs the script
+# inside the private session.
+if [ "${PHONECAM_SMOKE_INNER:-0}" != 1 ]; then
+    TMP=$(mktemp -d)
+    export TMP
+    trap 'rm -rf "$TMP"' EXIT
+
+    # The private XDG_RUNTIME_DIR hides the run directory of the user, so the
+    # real one is kept for the cleanup of the accessibility directories.
+    REAL_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export REAL_RUNTIME
+
+    # The bus looks for an activation file in $XDG_DATA_HOME/dbus-1/services,
+    # and the shell looks for an extension in
+    # $XDG_DATA_HOME/gnome-shell/extensions. The app installs with the prefix
+    # $TMP, so its datadir is $TMP/share, and XDG_DATA_HOME points there for
+    # both.
+    export XDG_DATA_HOME="$TMP/share"
+    export XDG_CONFIG_HOME="$TMP/config"
+    export XDG_CACHE_HOME="$TMP/cache"
+    export XDG_RUNTIME_DIR="$TMP/run"
+    export GSETTINGS_BACKEND=keyfile
+    export PHONECAM_TEST_LOG="$TMP/calls.log"
+    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME/glib-2.0/settings" \
+        "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$TMP/stubs"
+    chmod 700 "$XDG_RUNTIME_DIR"
+
+    # The test programs of the other packages: they are present and adb
+    # answers. The app finds them on the PATH of the bus daemon.
+    cat > "$TMP/stubs/scrcpy" <<'STUB'
+#!/bin/sh
+echo "scrcpy 3.0 (test)"
+STUB
+    # The test PipeWire daemon: it prints the nodes from a file, so the test
+    # says which nodes exist. The stream of the host is not part of the test.
+    cat > "$TMP/stubs/pw-dump" <<STUB
+#!/bin/sh
+cat "$TMP/pipewire.json" 2>/dev/null || echo '[]'
+STUB
+    # At the start, PipeWire holds a source of another device, not of our
+    # camera.
+    cat > "$TMP/pipewire.json" <<JSON
+[{"info": {"props": {"media.class": "Video/Source", "node.name": "v4l2_input.other_video99"}}}]
+JSON
+    cat > "$TMP/stubs/adb" <<STUB
+#!/bin/sh
+printf '%s\t%s\n' "\$(date +%H:%M:%S)" "\$*" >> "$TMP/adb.log"
+[ "\${1:-}" = "get-state" ] && echo device
+exit 0
+STUB
+    # The test pkexec: it records its argument list and it changes nothing. The
+    # root part of the installation must run from the root-owned copy in
+    # /usr/local/lib/phonecam/, and the test reads that call here. The test
+    # writes no file under /usr/local.
+    cat > "$TMP/stubs/pkexec" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >> "$TMP/pkexec.log"
+exit 0
+STUB
+    chmod 755 "$TMP/stubs/scrcpy" "$TMP/stubs/adb" "$TMP/stubs/pw-dump" \
+        "$TMP/stubs/pkexec"
+    export PATH="$TMP/stubs:$PATH"
+
+    # The private settings of the shell. The keyfile backend keeps them under
+    # XDG_CONFIG_HOME, so the test leaves the settings of the user alone.
+    cat > "$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<EOF
+[org/gnome/shell]
+enabled-extensions=['$uuid']
+
+[org/gnome/shell/extensions/phonecam]
+poll-interval=5
+
+[org/gnome/desktop/interface]
+toolkit-accessibility=true
+EOF
+
+    # --- the app in the private prefix --------------------------------------
+    command -v meson > /dev/null 2>&1 || {
+        echo "FAIL meson is missing"
+        exit 1
+    }
+    if ! (cd "$repo/app" && meson setup "$TMP/appbuild" -Dprefix="$TMP") \
+            > "$TMP/meson.log" 2>&1; then
+        echo "FAIL the app did not configure (meson setup)"
+        tail -20 "$TMP/meson.log"
+        exit 1
+    fi
+    if ! meson install -C "$TMP/appbuild" >> "$TMP/meson.log" 2>&1; then
+        echo "FAIL the app did not install (meson install)"
+        tail -20 "$TMP/meson.log"
+        exit 1
+    fi
+
+    # The test engine keeps the state in a file of the private configuration.
+    # The app runs the engine of its own directory, so the test replaces the
+    # installed engine.
+    app_dir="$XDG_DATA_HOME/phonecam-app"
+    cat > "$app_dir/bin/phonecam" <<'ENGINE'
+#!/bin/bash
+set -u
+config="${XDG_CONFIG_HOME:-$HOME/.config}/phonecam"
+mkdir -p "$config"
+printf '%s\t%s\n' "$(date +%H:%M:%S)" "$*" >> "${PHONECAM_TEST_LOG:-/dev/null}"
+case "${1:-}" in
+is-running)
+    [[ -f $config/running ]] && exit 0 || exit 1
+    ;;
+start)
+    : > "$config/running"
+    echo "phonecam: camera stream started (pid 4242)"
+    ;;
+stop)
+    rm -f "$config/running"
+    echo "phonecam: camera stream stopped"
+    ;;
+status)
+    if [[ -f $config/running ]]; then
+        echo "phonecam: running (pid 4242), camera 1, orientation 0"
+    else
+        echo "phonecam: not running, camera 1, orientation 0"
+    fi
+    ;;
+rotate | camera | mirror | mic)
+    printf '%s\n' "${2:-}" > "$config/$1"
+    echo "phonecam: $1 ${2:-}"
+    ;;
+preview)
+    echo "phonecam: no camera stream runs. Start it with: phonecam start" >&2
+    exit 1
+    ;;
+*)
+    echo "phonecam: unknown command ${1:-}" >&2
+    exit 1
+    ;;
+esac
+ENGINE
+    chmod 755 "$app_dir/bin/phonecam"
+
+    # The setup command installs the root-owned copy only when a file of its
+    # directory differs from that copy. Mark the module script, so that this
+    # test always covers the install step, also on a machine that holds a
+    # root-owned copy with the same content.
+    printf '\n# smoke test: this copy differs from the root-owned copy\n' \
+        >> "$app_dir/setup-v4l2loopback.sh"
+
+    # --- the widget in the private extension directory ----------------------
+    # The widget is a front-end: it holds no bin/ and no etc/, only the modules
+    # and the settings of the shell.
+    target="$XDG_DATA_HOME/gnome-shell/extensions/$uuid"
+    mkdir -p "$target"
+    cp "$root/extension.js" "$root/prefs.js" "$root/metadata.json" \
+        "$root/stylesheet.css" "$target/"
+    cp -r "$root/lib" "$root/schemas" "$target/"
+    glib-compile-schemas "$target/schemas"
+
+    exec env PHONECAM_SMOKE_INNER=1 dbus-run-session -- "$0" "$@"
+fi
+
+: "${TMP:?the first pass did not pass the private directory}"
+
+app_dir="$XDG_DATA_HOME/phonecam-app"
+target="$XDG_DATA_HOME/gnome-shell/extensions/$uuid"
 SHELL_PID=""
 A11Y_PID=""
 REGISTRY_PID=""
@@ -41,6 +207,9 @@ cleanup() {
         [ -d "$dir" ] || continue
         printf '%s\n' "$BEFORE" | grep -qx "$dir" || rm -rf "$dir"
     done
+    # The widget holds no engine, and the app may stay alive after the widget
+    # is disabled; this test stops it.
+    pkill -f -- "$app_dir/main.js" 2>/dev/null
     rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -102,8 +271,9 @@ panel_width() {
     printf '%s\n' "$result"
 }
 
-# Change the state of the test engine to "the stream runs". The widget reads
-# this state, so the panel shows the light of the running stream.
+# Change the state of the stream to "the stream runs". The app reads the state
+# files of the engine, and the widget reads the state from the app, so the
+# panel shows the light of the running stream.
 start_test_stream() {
     mkdir -p "$XDG_CONFIG_HOME/phonecam"
     : > "$XDG_CONFIG_HOME/phonecam/running"
@@ -116,121 +286,13 @@ start_test_stream() {
 [ -x "$(command -v gnome-shell)" ] || fail "gnome-shell is missing"
 [ -x /usr/lib/at-spi2-registryd ] || fail "at-spi2-registryd is missing"
 
-# --- private environment ----------------------------------------------------
-export XDG_DATA_HOME="$TMP/data"
-export XDG_CONFIG_HOME="$TMP/config"
-export XDG_CACHE_HOME="$TMP/cache"
-export XDG_RUNTIME_DIR="$TMP/run"
-export GSETTINGS_BACKEND=keyfile
-export PHONECAM_TEST_LOG="$TMP/calls.log"
-mkdir -p "$XDG_DATA_HOME/gnome-shell/extensions" "$XDG_CONFIG_HOME/glib-2.0/settings" \
-    "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$TMP/stubs"
-chmod 700 "$XDG_RUNTIME_DIR"
-
-# --- the extension with a test engine ---------------------------------------
-target="$XDG_DATA_HOME/gnome-shell/extensions/$uuid"
-mkdir -p "$target/bin" "$target/etc/modprobe.d" "$target/etc/modules-load.d"
-cp "$root/extension.js" "$root/prefs.js" "$root/metadata.json" "$root/stylesheet.css" "$target/"
-cp -r "$root/lib" "$root/schemas" "$target/"
-cp "$repo/bin/phonecam-setup" "$target/bin/"
-cp "$repo/setup-v4l2loopback.sh" "$target/"
-cp "$repo/etc/modprobe.d/v4l2loopback.conf" "$target/etc/modprobe.d/"
-cp "$repo/etc/modules-load.d/v4l2loopback.conf" "$target/etc/modules-load.d/"
-# The command bin/phonecam-setup installs the root-owned copy only when a file
-# of the extension directory differs from that copy. Mark the module script, so
-# that this test always covers the install step, also on a machine that holds a
-# root-owned copy with the same content.
-printf '\n# smoke test: this copy differs from the root-owned copy\n' \
-    >> "$target/setup-v4l2loopback.sh"
-glib-compile-schemas "$target/schemas"
-
-# The test engine keeps the state in a file of the private configuration.
-cat > "$target/bin/phonecam" <<'ENGINE'
-#!/bin/bash
-set -u
-config="${XDG_CONFIG_HOME:-$HOME/.config}/phonecam"
-mkdir -p "$config"
-printf '%s\t%s\n' "$(date +%H:%M:%S)" "$*" >> "${PHONECAM_TEST_LOG:-/dev/null}"
-case "${1:-}" in
-is-running)
-    [[ -f $config/running ]] && exit 0 || exit 1
-    ;;
-start)
-    : > "$config/running"
-    echo "phonecam: camera stream started (pid 4242)"
-    ;;
-stop)
-    rm -f "$config/running"
-    echo "phonecam: camera stream stopped"
-    ;;
-status)
-    if [[ -f $config/running ]]; then
-        echo "phonecam: running (pid 4242), camera 1, orientation 0"
-    else
-        echo "phonecam: not running, camera 1, orientation 0"
-    fi
-    ;;
-rotate | camera | mirror | mic)
-    printf '%s\n' "${2:-}" > "$config/$1"
-    echo "phonecam: $1 ${2:-}"
-    ;;
-preview)
-    echo "phonecam: no camera stream runs. Start it with: phonecam start" >&2
-    exit 1
-    ;;
-*)
-    echo "phonecam: unknown command ${1:-}" >&2
-    exit 1
-    ;;
-esac
-ENGINE
-chmod 755 "$target/bin/phonecam"
-
-# The test programs of the other packages: they are present and adb answers.
-cat > "$TMP/stubs/scrcpy" <<'STUB'
-#!/bin/sh
-echo "scrcpy 3.0 (test)"
-STUB
-# The test PipeWire daemon: it prints the nodes from a file, so the test says
-# which nodes exist. The stream of the host is not part of the test.
-cat > "$TMP/stubs/pw-dump" <<STUB
-#!/bin/sh
-cat "$TMP/pipewire.json" 2>/dev/null || echo '[]'
-STUB
-chmod 755 "$TMP/stubs/pw-dump"
-# At the start, PipeWire holds a source of another device, not of our camera.
-cat > "$TMP/pipewire.json" <<JSON
-[{"info": {"props": {"media.class": "Video/Source", "node.name": "v4l2_input.other_video99"}}}]
-JSON
-
-cat > "$TMP/stubs/adb" <<STUB
-#!/bin/sh
-printf '%s\t%s\n' "\$(date +%H:%M:%S)" "\$*" >> "$TMP/adb.log"
-[ "\${1:-}" = "get-state" ] && echo device
-exit 0
-STUB
-# The test pkexec: it records its argument list and it changes nothing. The
-# root part of the installation must run from the root-owned copy in
-# /usr/local/lib/phonecam/, and the test reads that call here. The test writes
-# no file under /usr/local.
-cat > "$TMP/stubs/pkexec" <<STUB
-#!/bin/sh
-printf '%s\n' "\$*" >> "$TMP/pkexec.log"
-exit 0
-STUB
-chmod 755 "$TMP/stubs/scrcpy" "$TMP/stubs/adb" "$TMP/stubs/pkexec"
-export PATH="$TMP/stubs:$PATH"
-
-cat > "$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<EOF
-[org/gnome/shell]
-enabled-extensions=['$uuid']
-
-[org/gnome/shell/extensions/phonecam]
-poll-interval=5
-
-[org/gnome/desktop/interface]
-toolkit-accessibility=true
-EOF
+# The widget must hold no script: the engine and the setup commands belong to
+# the app. This is a condition of the review of extensions.gnome.org.
+[ ! -e "$target/bin" ] || fail "the widget directory holds a bin/: the widget must hold no script"
+[ ! -e "$target/etc" ] || fail "the widget directory holds an etc/"
+[ -z "$(find "$target" -maxdepth 1 -name '*.sh' -print -quit)" ] ||
+    fail "the widget directory holds a shell script"
+echo "the widget directory holds no bin/, no etc/, and no shell script"
 
 # --- accessibility bus ------------------------------------------------------
 /usr/lib/at-spi-bus-launcher --launch-immediately > "$TMP/a11y.log" 2>&1 &
@@ -266,6 +328,17 @@ echo "$info" | grep -q "'error': <''>" || fail "the shell reports an extension e
 echo "$info" | grep -q "'hasPrefs': <true>" || fail "the shell does not see the preferences window"
 echo "extension is ACTIVE"
 
+# The row of the menu comes from the app, and the bus starts the app on demand
+# from its activation file. This is the check that the app actually runs. The
+# first read of the widget is asynchronous, so the test gives the app a moment.
+for _ in $(seq 1 10); do
+    pgrep -f -- "$app_dir/main.js" > /dev/null && break
+    sleep 1
+done
+pgrep -f -- "$app_dir/main.js" > /dev/null ||
+    fail "the bus did not start the app from its activation file"
+echo "the bus started the app"
+
 # The virtual camera of the host: the test expects its problem row only when
 # the host has no device with the card label of the engine.
 device_problem=""
@@ -276,11 +349,11 @@ else
     echo "note: this host has the device "PhoneCam Camera""
 fi
 
-# The row of the portal case. The widget asks the PipeWire daemon whether it
-# holds the source of the camera, and the applications that use the camera
-# portal get their camera from PipeWire, so this row is the fix for them.
-# The test PipeWire holds no source of our camera at the start, so the row
-# "Restart PipeWire" must appear while the stream runs.
+# The row of the portal case. The app asks the PipeWire daemon whether it holds
+# the source of the camera, and the applications that use the camera portal get
+# their camera from PipeWire, so this row is the fix for them. The test
+# PipeWire holds no source of our camera at the start, so the row "Restart
+# PipeWire" must appear while the stream runs.
 if [ "${PHONECAM_SMOKE_DUMP:-0}" = 1 ]; then
     open_system_menu
     sleep 1
@@ -355,26 +428,28 @@ python3 "$root/tools/a11y-tree.py" --wait 9 --check --state streaming \
     --state-line "camera 2 · flip90 · microphone off" ||
     fail "the row Restart PipeWire stays although PipeWire holds the camera"
 
-# --- the widget reads only the state ---------------------------------------
+# --- the app owns the engine ------------------------------------------------
+# The widget holds no engine: it reads the state from the app, and the app runs
+# the engine. The test engine logs every call, so the log is the proof that the
+# app read the state of the stream.
 if [ -f "$TMP/calls.log" ]; then
     calls=$(wc -l < "$TMP/calls.log")
     echo "--- engine calls ($calls):"
     sort -u "$TMP/calls.log" | sed 's/^/    /'
-    unexpected=$(awk -F'\t' '$2 != "is-running"' "$TMP/calls.log")
-    [ -z "$unexpected" ] || fail "the widget ran a command that is not a state read: $unexpected"
 else
-    fail "the widget did not read the state"
+    fail "the app did not run the engine of the stream"
 fi
-[ -f "$TMP/adb.log" ] || fail "the widget did not ask the phone"
-grep -q "get-state" "$TMP/adb.log" || fail "the widget did not run adb get-state"
+# The app asks the phone itself, so the row of the phone in the menu comes from
+# the app. The stub adb records the questions and it answers "device".
+[ -f "$TMP/adb.log" ] || fail "the app did not ask the phone"
+grep -q "get-state" "$TMP/adb.log" || fail "the app did not run adb get-state"
 
 # --- the setup command: the root part runs from a root-owned copy -----------
-# The row `Set up the virtual camera` runs the command bin/phonecam-setup of
-# the extension directory. That command must put a root-owned copy of the
-# module script and of its configuration in /usr/local/lib/phonecam/ first, and
-# then it must run that copy with pkexec. It must never give a file of the
-# extension directory to pkexec: a process of the user can change that file,
-# and the file would run as root.
+# The row `Set up the virtual camera` runs the command bin/phonecam-setup of the
+# app. That command must put a root-owned copy of the module script and of its
+# configuration in /usr/local/lib/phonecam/ first, and then it must run that
+# copy with pkexec. It must never give a file of the app directory to pkexec: a
+# process of the user can change that file, and the file would run as root.
 #
 # The test runs that command, and not the row of the menu: this workstation has
 # no program for a synthetic click (CON-003), and the accessibility interface of
@@ -384,19 +459,19 @@ grep -q "get-state" "$TMP/adb.log" || fail "the widget did not run adb get-state
 [ "$(command -v pkexec)" = "$TMP/stubs/pkexec" ] ||
     fail "the test pkexec is not the first pkexec of PATH: $(command -v pkexec)"
 rm -f "$TMP/pkexec.log"
-echo "--- the test runs the setup command of the widget"
-PHONECAM_NONINTERACTIVE=1 "$target/bin/phonecam-setup" < /dev/null ||
-    fail "the setup command of the widget failed"
+echo "--- the test runs the setup command of the app"
+PHONECAM_NONINTERACTIVE=1 "$app_dir/bin/phonecam-setup" < /dev/null ||
+    fail "the setup command of the app failed"
 [ -f "$TMP/pkexec.log" ] || fail "the setup command did not run pkexec"
 echo "--- pkexec calls:"
 sed 's/^/    /' "$TMP/pkexec.log"
 
-source_script="$target/setup-v4l2loopback.sh"
+source_script="$app_dir/setup-v4l2loopback.sh"
 root_dir=/usr/local/lib/phonecam
 root_script="$root_dir/setup-v4l2loopback.sh"
-# The test fails when the root part runs the script of the extension directory:
-# that script is user-writable. See the review guideline "Privileged Subprocess
-# must not be user-writable" of extensions.gnome.org.
+# The test fails when the root part runs the script of the app directory: that
+# script is user-writable. See the review guideline "Privileged Subprocess must
+# not be user-writable" of extensions.gnome.org.
 bad=$(awk -v src="$source_script" '$1 == src' "$TMP/pkexec.log")
 [ -z "$bad" ] || fail "the root part ran the user-writable script: $bad"
 first=$(sed -n '1p' "$TMP/pkexec.log")
@@ -409,8 +484,8 @@ last=$(sed -n '$p' "$TMP/pkexec.log")
     fail "the last pkexec call is not the root-owned module script: $last"
 for wanted in \
     "/usr/bin/install -D -o root -g root -m 755 $source_script $root_script" \
-    "/usr/bin/install -D -o root -g root -m 644 $target/etc/modprobe.d/v4l2loopback.conf $root_dir/etc/modprobe.d/v4l2loopback.conf" \
-    "/usr/bin/install -D -o root -g root -m 644 $target/etc/modules-load.d/v4l2loopback.conf $root_dir/etc/modules-load.d/v4l2loopback.conf"; do
+    "/usr/bin/install -D -o root -g root -m 644 $app_dir/etc/modprobe.d/v4l2loopback.conf $root_dir/etc/modprobe.d/v4l2loopback.conf" \
+    "/usr/bin/install -D -o root -g root -m 644 $app_dir/etc/modules-load.d/v4l2loopback.conf $root_dir/etc/modules-load.d/v4l2loopback.conf"; do
     grep -qxF -- "$wanted" "$TMP/pkexec.log" ||
         fail "the setup command did not make the root-owned copy: $wanted"
 done
@@ -419,8 +494,10 @@ echo "the root part runs from the root-owned copy $root_script"
 # --- disable ----------------------------------------------------------------
 gnome-extensions disable "$uuid" > /dev/null 2>&1 || fail "the extension did not disable"
 sleep 3
-left=$(pgrep -f "$target/bin/phonecam" | wc -l)
-[ "$left" = 0 ] || fail "an engine process is still running after disable"
+# The widget holds no script, so nothing of the widget can run after disable.
+# The app may stay alive; the cleanup of this test stops it.
+left=$(pgrep -f -- "$target" | wc -l)
+[ "$left" = 0 ] || fail "a process of the widget runs after disable"
 echo "disabled without a leftover process"
 
-echo "PASS: the widget is a row of the system menu, shows both states, keeps the panel icon optional, and reads only the state"
+echo "PASS: the widget is a row of the system menu, shows both states, keeps the panel icon optional, and reads the state from the app"

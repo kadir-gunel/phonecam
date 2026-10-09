@@ -3,15 +3,17 @@
 The GNOME Shell front-end of PhoneCam. It shows the camera stream as a row of
 the system menu (the quick settings menu) of the shell and it starts and stops
 that stream. A setting can also show an icon of the widget in the top panel.
-The engine is the command `bin/phonecam` of this repository, so a command from
-the menu and a command from a terminal have the same result.
+The widget is a front-end: it holds no engine and no setup command, and it talks
+to the PhoneCam app over the session D-Bus. The app (`app/` in the repository)
+holds the engine `bin/phonecam` and the setup commands, so a command from the
+menu and a command from a terminal have the same result.
 
-Tested on GNOME Shell 50.5 (Wayland). The extension uses the API of GNOME
+Tested on GNOME Shell 51.5 (Wayland). The extension uses the API of GNOME
 Shell 45 and later.
 
 ## Requirements
 
-- GNOME Shell 50 or later.
+- GNOME Shell 51 or later.
 - The packages of the engine:
 
   ```sh
@@ -28,14 +30,24 @@ Shell 45 and later.
 
 ## Install
 
+Install the app first. The app holds the engine and the setup commands, and the
+widget talks to it over the session D-Bus. From the root of the repository:
+
+```sh
+cd app
+meson setup builddir && meson install -C builddir
+```
+
+Then install the widget, from this directory:
+
 ```sh
 ./tools/install.sh
 ```
 
-The installer puts the extension in
-`~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io` and the engine, the
-setup command, the module script, and the configuration of the module into the
-same directory. The extension is self-contained.
+The installer puts the widget in
+`~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io` and
+nothing else. The package of the widget holds the widget only: no script, no
+`bin/`, and no `etc/`. The engine and the setup commands come with the app.
 
 Then:
 
@@ -127,8 +139,6 @@ take the attention colour of the theme while the stream runs.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| The phonecam command | the copy in the extension directory | The engine. |
-| The setup command | the copy in the extension directory | The command of the menu row `Set up the virtual camera`. |
 | Read the state every | 5 s | The poll time. After an action the widget reads each second for 12 seconds. |
 | Show the icon in the panel | off | The widget also shows its icon in the top panel. |
 | Keyboard shortcut | empty | Starts and stops the stream. |
@@ -170,7 +180,7 @@ session of the user.
   later major version, add it to `shell-version` in `metadata.json`; the code
   uses the API of GNOME Shell 45 and later only.
 - The widget reads and writes no file of its own except the settings. The
-  state lives in the configuration files of the engine.
+  state lives in the app, which reads the configuration files of the engine.
 
 ## Files
 
@@ -178,8 +188,9 @@ session of the user.
 |---|---|
 | `extension.js` | The entry point of the extension. |
 | `lib/indicator.js` | The row in the system menu, the menu, the wheel, and the shortcut. |
-| `lib/service.js` | The state reads, the queue, and the child processes. |
-| `lib/cli.js` | The commands of the engine. |
+| `lib/service.js` | The adapter of the app: the state reads, the queue, and the calls. |
+| `lib/dbus-client.js` | The D-Bus client of the app (the name `io.github.kadir_gunel.PhoneCam`). |
+| `lib/cli.js` | The argument lists of the engine. |
 | `lib/state.js` | The state and the plan of the menu. |
 | `prefs.js` | The preferences window. |
 | `schemas/` | The settings. |

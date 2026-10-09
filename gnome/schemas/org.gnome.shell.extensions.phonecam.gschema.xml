@@ -2,16 +2,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <schemalist gettext-domain="phonecam">
   <schema id="org.gnome.shell.extensions.phonecam" path="/org/gnome/shell/extensions/phonecam/">
-    <key name="engine" type="s">
-      <default>''</default>
-      <summary>Engine</summary>
-      <description>Name or path of the phonecam command. Empty means the copy that ships in the extension directory.</description>
-    </key>
-    <key name="setup" type="s">
-      <default>''</default>
-      <summary>Setup command</summary>
-      <description>Name or path of the phonecam-setup command. Empty means the copy that ships in the extension directory.</description>
-    </key>
     <key name="poll-interval" type="u">
       <default>5</default>
       <range min="1" max="60"/>

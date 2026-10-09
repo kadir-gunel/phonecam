@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The interface of the PhoneCam app.
+
+  The app holds the engine (bin/phonecam) and the setup commands. The widget of
+  GNOME Shell is a front-end: it reads this state and it sends these commands.
+  The well-known name and the object path are set by the app, so neither appears
+  here.
+-->
+<node>
+  <interface name="io.github.kadir_gunel.PhoneCam">
+
+    <!-- Run one command of the engine, for example ["rotate", "90"]. -->
+    <method name="Run">
+      <arg type="as" direction="in" name="argv"/>
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="i" direction="out" name="code"/>
+      <arg type="s" direction="out" name="stdout"/>
+      <arg type="s" direction="out" name="stderr"/>
+    </method>
+
+    <!-- The state of the menu. Two parallel strings hold each problem. -->
+    <method name="GetState">
+      <arg type="b" direction="out" name="running"/>
+      <arg type="b" direction="out" name="preview_running"/>
+      <arg type="s" direction="out" name="rotation"/>
+      <arg type="s" direction="out" name="camera"/>
+      <arg type="b" direction="out" name="mic_on"/>
+      <arg type="b" direction="out" name="mirror_on"/>
+      <arg type="s" direction="out" name="device"/>
+      <arg type="s" direction="out" name="phone"/>
+      <arg type="b" direction="out" name="pipewire_source"/>
+      <arg type="a(ss)" direction="out" name="problems"/>
+    </method>
+
+    <!-- The cameras of the phone, as the engine documents them. -->
+    <method name="GetCameras">
+      <arg type="as" direction="out" name="ids"/>
+      <arg type="as" direction="out" name="names"/>
+    </method>
+
+    <method name="StartPreview">
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="s" direction="out" name="error"/>
+    </method>
+
+    <method name="StopPreview">
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="s" direction="out" name="error"/>
+    </method>
+
+    <method name="RestartPipeWire">
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="s" direction="out" name="error"/>
+    </method>
+
+    <method name="RunSetup">
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="s" direction="out" name="error"/>
+    </method>
+
+    <!-- Let the next read ask the phone again. -->
+    <method name="ClearPhoneCache"/>
+
+    <signal name="StateChanged">
+      <arg type="s" name="state"/>
+    </signal>
+
+    <signal name="Error">
+      <arg type="s" name="message"/>
+    </signal>
+  </interface>
+</node>

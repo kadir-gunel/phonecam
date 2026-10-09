@@ -9,9 +9,12 @@ microphone of this computer. The picture appears as the video device
 application can use it. The microphone appears as the audio source
 **PhoneCam**.
 
-The front-end is a row of the system menu (the quick settings menu) of GNOME
-Shell 50 and later (`gnome/`). A setting can also show an icon of the widget in
-the top panel. It runs the engine `bin/phonecam`, which holds the state in
+PhoneCam has two parts. The app (`app/`) holds the engine `bin/phonecam` and
+the setup commands, and it serves them over the session D-Bus. The widget
+(`gnome/`) is the front-end: it talks to the app over the session D-Bus and it
+holds no script of its own. The widget is a row of the system menu (the quick
+settings menu) of GNOME Shell 50 and later. A setting can also show an icon of
+the widget in the top panel. The engine holds the state in
 `~/.config/phonecam`, so a command from the menu and a command from a terminal
 give the same result.
 
@@ -59,13 +62,16 @@ give the same result.
 
 - An Android phone with USB debugging. Tested on a OnePlus 5 with
   LineageOS 22 (Android 15).
-- GNOME Shell 50 or later with `gjs`.
+- GNOME Shell 51 or later with `gjs`.
 
 ## Install
 
-### 1. The engine and the virtual camera
+The project has two parts. Install the app first, then the widget. Both parts
+are necessary.
 
-Both front-ends use these steps.
+### 1. The app
+
+The app holds the engine and the setup commands.
 
 1. Install the packages (above).
 2. Get the code:
@@ -74,7 +80,21 @@ Both front-ends use these steps.
    git clone https://github.com/kadir-gunel/phonecam
    ```
 
-3. Build the kernel module and its configuration:
+3. Build and install the app:
+
+   ```sh
+   cd phonecam/app
+   meson setup builddir && meson install -C builddir
+   ```
+
+   The app installs the engine at `$prefix/share/phonecam-app/bin/phonecam`,
+   the launcher `$prefix/bin/phonecam-app`, and the D-Bus service file. The
+   default prefix is `~/.local`, so the engine is at
+   `~/.local/share/phonecam-app/bin/phonecam`. The session bus starts the app
+   on demand.
+
+4. Build the kernel module and its configuration. From the root of the
+   repository:
 
    ```sh
    ./bin/phonecam-setup
@@ -85,16 +105,17 @@ Both front-ends use these steps.
    and of its configuration with the owner root in `/usr/local/lib/phonecam/`,
    and it runs that copy: a process of your user cannot change the file that
    runs as root. The part that runs as root sends no signal to any process.
-   The GNOME front-end has the menu row `Set up the virtual camera` for the
-   same step; it asks with the polkit dialog of the desktop. The command is
-   safe to run again. Run it after a kernel update if the virtual camera is
-   missing.
+   The widget has the menu row `Set up the virtual camera` for the same step;
+   it asks with the polkit dialog of the desktop. The command is safe to run
+   again. Run it after a kernel update if the virtual camera is missing.
 
-4. Connect the phone by USB, unlock it, and accept the USB-debugging question.
-5. Start the stream and select `PhoneCam Camera` in the application. The menu
-   of the GNOME front-end, or `bin/phonecam start`, starts the stream.
+5. Connect the phone by USB, unlock it, and accept the USB-debugging question.
+6. Start the stream and select `PhoneCam Camera` in the application. The menu
+   of the widget, or `bin/phonecam start`, starts the stream.
 
-### 2. The front-end
+### 2. The widget
+
+The widget is a front-end. It holds no engine and no setup command.
 
 ```sh
 cd gnome
@@ -120,11 +141,11 @@ or over the optional icon of the panel, turns the picture, and a keyboard
 shortcut starts and stops the stream (set it in the preferences; the value is
 empty at the start).
 
-From a terminal, the engine lives in the directory of the front-end. Add an
-alias to `~/.bashrc`:
+From a terminal, use the engine of the installed app. Add an alias to
+`~/.bashrc`:
 
 ```sh
-alias phonecam="$HOME/Projects/phonecam/bin/phonecam"
+alias phonecam="$HOME/.local/share/phonecam-app/bin/phonecam"
 ```
 
 | Command | Result |
@@ -160,10 +181,16 @@ does not change the session of the user.
 
 ## Remove
 
-The front-ends:
+The widget:
 
 ```sh
 rm -rf ~/.local/share/gnome-shell/extensions/phonecam@kadir-gunel.github.io
+```
+
+The app, from the directory `app/`:
+
+```sh
+ninja -C builddir uninstall
 ```
 
 The virtual camera and the state, if you do not want them any more:
@@ -184,7 +211,8 @@ rm -rf "$HOME/.config/phonecam"
   not get that ACL, add your user to the `video` group.
 - One reader only: while a conference application holds the camera, the
   preview and the stream cannot open it again. Stop the stream first.
-- The front-end runs in the GNOME Shell process. It spawns `bin/phonecam`,
+- The widget runs in the GNOME Shell process and it starts no other program: it
+  talks to the app over the session D-Bus. The app spawns `bin/phonecam`,
   `pw-dump` (the state of PipeWire), and `systemctl --user restart pipewire`
   when you ask for it. The setup script needs root once, for the kernel module
   and its boot configuration.

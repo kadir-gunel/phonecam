@@ -49,7 +49,11 @@ function textItem(title, subtitle, styleClass) {
     if (styleClass)
         item.add_style_class_name(styleClass);
 
-    const box = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'phonecam-row-box'});
+    const box = new St.BoxLayout({
+        orientation: Clutter.Orientation.VERTICAL,
+        x_expand: true,
+        style_class: 'phonecam-row-box',
+    });
     box.add_child(labelLine(title, 'phonecam-row-title'));
     if (subtitle)
         box.add_child(labelLine(subtitle, 'phonecam-row-subtitle'));
@@ -114,12 +118,11 @@ function lightOverToggle(toggle, light) {
 
 export const PhoneCamIndicator = GObject.registerClass(
 class PhoneCamIndicator extends QuickSettings.SystemIndicator {
-    _init(settings, {openPreferences, directory}) {
+    _init(settings, {openPreferences}) {
         super._init();
 
         this._settings = settings;
         this._openPreferences = openPreferences;
-        this._directory = directory;
         this._service = new PhoneCamService();
         this._state = null;
         this._problems = [];
@@ -229,32 +232,12 @@ class PhoneCamIndicator extends QuickSettings.SystemIndicator {
         }
     }
 
-    /** @returns {string|null} The engine that ships next to the extension. */
-    _bundledPath(name) {
-        if (this._directory === null || this._directory === undefined)
-            return null;
-        const file = this._directory.get_child('bin').get_child(name);
-        return file.query_exists(null) ? file.get_path() : null;
-    }
-
-    /** Read the settings into the service. */
+    /* The engine lives in the app, so the widget holds no engine setting. */
     _applySettings() {
-        const configured = this._settings.get_string('engine').trim();
-        const engine = configured !== '' ? configured : this._bundledPath('phonecam');
-        this._service.setEngine(engine ?? 'phonecam');
-
-        const setup = this._settings.get_string('setup').trim();
-        this._service.setSetup(setup !== '' ? setup : (this._bundledPath('phonecam-setup') ?? 'phonecam-setup'));
-
         this._updateKeybinding();
     }
 
     _connectSettings() {
-        this._settings.connectObject('changed::engine', () => {
-            this._applySettings();
-            this.refresh();
-        }, this);
-        this._settings.connectObject('changed::setup', () => this._applySettings(), this);
         this._settings.connectObject('changed::poll-interval', () => this._scheduleRefresh(), this);
         this._settings.connectObject(`changed::${SHOW_PANEL_ICON_KEY}`, () => this._syncPanelIcon(), this);
         // The shortcut lives in this schema, so Main.wm reads the same file.

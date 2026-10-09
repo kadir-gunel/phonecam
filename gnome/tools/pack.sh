@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Build phonecam@kadir-gunel.github.io.shell-extension.zip for distribution.
 # The `zip` program is not needed. The working tree stays clean.
+#
+# The package holds the widget only. The engine and the setup commands come
+# with the PhoneCam app, because the review guidelines of extensions.gnome.org
+# forbid scripts in a GNOME Shell extension package.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -13,12 +17,6 @@ trap 'rm -rf "$staging"' EXIT
 
 cp extension.js prefs.js metadata.json stylesheet.css "$staging/"
 cp -r lib schemas "$staging/"
-mkdir -p "$staging/bin" "$staging/etc/modprobe.d" "$staging/etc/modules-load.d"
-cp "$repo/bin/phonecam" "$repo/bin/phonecam-setup" "$staging/bin/"
-cp "$repo/setup-v4l2loopback.sh" "$staging/"
-cp "$repo/etc/modprobe.d/v4l2loopback.conf" "$staging/etc/modprobe.d/"
-cp "$repo/etc/modules-load.d/v4l2loopback.conf" "$staging/etc/modules-load.d/"
-chmod 755 "$staging/bin/phonecam" "$staging/bin/phonecam-setup" "$staging/setup-v4l2loopback.sh"
 cp "$repo/LICENSE" "$staging/"
 # The compiled schema stays out of the package: the review of
 # extensions.gnome.org reports it as EGO-P-006 for GNOME 45 and later, and the

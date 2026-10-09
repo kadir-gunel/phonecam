@@ -9,7 +9,7 @@ Status: Released for implementation
 
 ### 1.1 Subject
 
-A GNOME Shell extension for GNOME Shell 50 and later. The extension shows the
+A GNOME Shell extension for GNOME Shell 51 and later. The extension shows the
 PhoneCam camera stream as a row of the system menu (the quick settings menu) of
 GNOME Shell and it controls that stream. A setting can also show an icon of the
 widget in the top panel. The extension identifier is
@@ -19,10 +19,11 @@ widget in the top panel. The extension identifier is
 ### 1.2 Purpose
 
 The engine (`bin/phonecam`) is a command line program that does not use a
-desktop environment. This specification covers the front-end for GNOME Shell
-50 and later: it shows the state of the stream in the system menu, it can show
-an icon of the widget in the top panel, and it sends the commands of the
-engine.
+desktop environment. It comes with the PhoneCam app (`app/`), which owns the
+D-Bus name `io.github.kadir_gunel.PhoneCam`. This specification covers the
+front-end for GNOME Shell 50 and later: it shows the state of the stream in the
+system menu, it can show an icon of the widget in the top panel, and it sends
+the commands to the app over the session D-Bus. The app starts the engine.
 
 ### 1.3 In scope
 
@@ -31,20 +32,22 @@ engine.
 - An optional icon of the widget in the top panel, with the setting
   `show-panel-icon` (the default value is off).
 - One drop-down menu with the state and with every command of the engine.
-- A click on a menu row runs one command of the engine.
+- A click on a menu row sends one command of the engine to the app.
 - The wheel over the row of the system menu, or over the icon of the panel,
   turns the picture (the wheel of the bar widget).
 - One keyboard shortcut that starts and stops the stream (the optional
   keybinding of the manual).
-- A preferences window: the path of the engine, the poll time, the icon of the
-  panel, and the keyboard shortcut.
-- A menu item that runs the setup of the virtual camera with the polkit
-  dialog of GNOME.
+- A preferences window: the poll time, the icon of the panel, and the keyboard
+  shortcut.
+- A menu item that asks the app to run the setup of the virtual camera with the
+  polkit dialog of GNOME.
 - Tests: unit tests and a smoke test in a separate GNOME Shell instance.
 
 ### 1.4 Out of scope
 
-- The engine. The extension runs `bin/phonecam` and does not copy its logic.
+- The engine and the app. The app (`app/`) starts `bin/phonecam`; the widget
+  sends the commands to the app over the session D-Bus and does not copy the
+  logic of the engine.
 - The phone application, scrcpy, adb, and the kernel module v4l2loopback.
   The extension reports a missing item and shows the command for the fix.
 - A change of the media pipeline.
@@ -57,7 +60,7 @@ engine.
 | R2 | `bin/phonecam` (the engine, with its own usage text) |
 | R3 | `bin/phonecam-setup` and `setup-v4l2loopback.sh` (the setup of the module) |
 | R4 | ASD-STE100 Simplified Technical English, issue 9 |
-| R5 | The GNOME Shell 50 extension API (the modules of the shell) |
+| R5 | The GNOME Shell 51 extension API (the modules of the shell) |
 
 ## 3. Definitions
 
@@ -75,12 +78,12 @@ engine.
 
 | ID | Requirement |
 |---|---|
-| REQ-ENG-001 | The extension SHALL run the engine as a child process and SHALL NOT copy the logic of the engine. |
-| REQ-ENG-002 | The extension SHALL start the engine with an argument list and SHALL NOT start a shell. |
-| REQ-ENG-003 | The extension SHALL read the state of the stream with the command `is-running` (exit status only). |
-| REQ-ENG-004 | The extension SHALL read the camera, the rotation, the mirror, and the microphone from the files that the engine writes in `$XDG_CONFIG_HOME/phonecam/`. The extension SHALL NOT write those files. |
-| REQ-ENG-005 | The extension SHALL stop one engine command after 20 seconds. The exception is `start` (45 seconds, because it searches the phone) and a command that stops the stream and starts it again, that is `rotate`, `camera`, `mirror`, and `mic` (75 seconds). |
-| REQ-ENG-006 | The extension SHALL keep a path setting for the engine. The default value SHALL be the engine next to the extension, then `phonecam` on the search path. |
+| REQ-ENG-001 | The app SHALL run the engine as a child process. The widget SHALL send the command to the app over the session D-Bus. Neither part SHALL copy the logic of the engine. |
+| REQ-ENG-002 | The app SHALL start the engine with an argument list and SHALL NOT start a shell. The widget SHALL send that argument list to the app. |
+| REQ-ENG-003 | The app SHALL read the state of the stream with the command `is-running` (exit status only). The widget SHALL read that state with the D-Bus method `GetState`. |
+| REQ-ENG-004 | The app SHALL read the camera, the rotation, the mirror, and the microphone from the files that the engine writes in `$XDG_CONFIG_HOME/phonecam/`. The widget SHALL read those values from the D-Bus method `GetState`, and it SHALL NOT write those files. |
+| REQ-ENG-005 | The widget SHALL stop one call of the engine after 20 seconds. The exception is `start` (45 seconds, because it searches the phone) and a command that stops the stream and starts it again, that is `rotate`, `camera`, `mirror`, and `mic` (75 seconds). |
+| REQ-ENG-006 | The widget SHALL hold no path setting for the engine and no path setting for the setup command. The engine is the one of the app at the D-Bus name `io.github.kadir_gunel.PhoneCam`. |
 
 ### 4.2 Display
 
@@ -104,15 +107,15 @@ engine.
 
 | ID | Requirement |
 |---|---|
-| REQ-ACT-001 | The row `Start the stream` SHALL run the engine with `start`. The row `Stop the stream` SHALL run the engine with `stop`. The menu SHALL show the row for the state that the engine does not have. A click on the toggle SHALL do the same as that row, and the `checked` state of the toggle SHALL be true while the stream runs. |
-| REQ-ACT-002 | A value in the submenu `Turn the picture` SHALL run the engine with `rotate <value>`. |
-| REQ-ACT-003 | A value in the submenu `Camera` SHALL run the engine with `camera <id>`. |
-| REQ-ACT-004 | The switch `Mirror` SHALL run the engine with `mirror on` or `mirror off`. |
-| REQ-ACT-005 | The switch `Microphone` SHALL run the engine with `mic on` or `mic off`. |
-| REQ-ACT-006 | The row `Preview window` SHALL run the engine with `preview`. The preview is a child process of the extension. The same row SHALL close an open preview. The extension SHALL stop that child process at disable time. |
-| REQ-ACT-007 | The row `Set up the virtual camera` SHALL run `bin/phonecam-setup`. That command SHALL use the polkit dialog of the session. |
-| REQ-ACT-008 | The wheel over the toggle, or over the icon of the widget in the panel, SHALL run `cycle-rotation` (wheel up) or `prev-rotation` (wheel down). |
-| REQ-ACT-009 | A keyboard shortcut SHALL run `start` or `stop`, in the same way as the first row of the menu. The shortcut SHALL exist only when the setting is not empty. |
+| REQ-ACT-001 | The row `Start the stream` SHALL send `start` to the app. The row `Stop the stream` SHALL send `stop` to the app. The menu SHALL show the row for the state that the engine does not have. A click on the toggle SHALL do the same as that row, and the `checked` state of the toggle SHALL be true while the stream runs. |
+| REQ-ACT-002 | A value in the submenu `Turn the picture` SHALL send `rotate <value>` to the app. |
+| REQ-ACT-003 | A value in the submenu `Camera` SHALL send `camera <id>` to the app. |
+| REQ-ACT-004 | The switch `Mirror` SHALL send `mirror on` or `mirror off` to the app. |
+| REQ-ACT-005 | The switch `Microphone` SHALL send `mic on` or `mic off` to the app. |
+| REQ-ACT-006 | The row `Preview window` SHALL ask the app to run the engine with `preview`. The preview is a child process of the app. The same row SHALL close an open preview. The app SHALL stop that child process when the widget asks for the close. |
+| REQ-ACT-007 | The row `Set up the virtual camera` SHALL ask the app to run `bin/phonecam-setup`. That command SHALL use the polkit dialog of the session. |
+| REQ-ACT-008 | The wheel over the toggle, or over the icon of the widget in the panel, SHALL send `cycle-rotation` (wheel up) or `prev-rotation` (wheel down) to the app. |
+| REQ-ACT-009 | A keyboard shortcut SHALL send `start` or `stop`, in the same way as the first row of the menu. The shortcut SHALL exist only when the setting is not empty. |
 | REQ-ACT-010 | The extension SHALL read the state again after each action. |
 | REQ-ACT-011 | The menu SHALL close after an action with a visible result (start, stop, preview). |
 
@@ -131,14 +134,14 @@ engine.
 | ID | Requirement |
 |---|---|
 | REQ-PREF-001 | The preferences window SHALL use the GNOME `Adw` widgets. |
-| REQ-PREF-002 | The preferences window SHALL hold these controls: the path of the engine, the poll interval in seconds (1 to 60), the switch `Show the icon in the panel` (REQ-DISP-013), and the keyboard shortcut. |
+| REQ-PREF-002 | The preferences window SHALL hold these controls: the poll interval in seconds (1 to 60), the switch `Show the icon in the panel` (REQ-DISP-013), and the keyboard shortcut. It SHALL hold no path of the engine and no path of the setup command. |
 | REQ-PREF-003 | The extension SHALL apply each change without a shell restart. |
 
 ### 4.6 Portability and setup
 
 | ID | Requirement |
 |---|---|
-| REQ-SET-001 | The installer SHALL put the engine, the setup command, the module setup script, and the configuration files of the module into the directory of the extension, so that the extension is self-contained. |
+| REQ-SET-001 | The installer of the app (`meson install` in `app/`) SHALL put the engine, the setup command, the module setup script, and the configuration files of the module into the data directory (`$datadir/phonecam-app/`). The installer of the widget (`gnome/tools/install.sh`) SHALL put the widget only into the directory of the extension: the widget SHALL hold no script, no `bin/`, and no `etc/`, because the review guidelines of extensions.gnome.org forbid scripts in the extension package. |
 | REQ-SET-002 | The command `bin/phonecam-setup` SHALL use `pkexec` when `pkexec` is available, and it SHALL use a terminal with `sudo` only when `pkexec` is not available. |
 | REQ-SET-003 | The script `setup-v4l2loopback.sh` SHALL also work when the kernel package holds the module and no sources exist in `/usr/src`. It SHALL install the configuration and load the module in that case. |
 | REQ-SET-004 | The extension SHALL NOT install packages. It SHALL show the exact package command in the problem row. |
@@ -215,8 +218,9 @@ or stops the stream. The other actions are rows of the menu of the widget.
 
 | Revision | Date | Change |
 |---|---|---|
+| 16 | 2026-10-09 | Request of the extension reviewer of extensions.gnome.org: the scripts MUST NOT live in the extension package. Solution: the engine (`bin/phonecam`) and the setup commands (`bin/phonecam-setup`, `setup-v4l2loopback.sh`, and `etc/`) moved to a separate app in `app/`, which the session bus starts on demand and which owns the well-known name `io.github.kadir_gunel.PhoneCam` and the object path `/io/github/kadir_gunel/PhoneCam`. The widget is a front-end: it talks to the app over the session D-Bus (the D-Bus client `gnome/lib/dbus-client.js` and the adapter `gnome/lib/service.js`), it holds no `bin/` and no `etc/`, and `gnome/tools/pack.sh` packs the widget only. The preferences lost the engine path and the setup path: they hold the read interval, the panel icon, and the keyboard shortcut only. The app is installed with meson from `app/`; the widget with `gnome/tools/install.sh`. Both parts are necessary (REQ-ENG-001 to REQ-ENG-006, REQ-ACT-001 to REQ-ACT-009, REQ-PREF-002, REQ-SET-001). |
 | 15 | 2026-09-30 | Request of the user: the same guard as the sibling projects. The repository now holds `tools/secret-scan.sh` (REQ-QA-006, VER-008). It fails on a credential value, on a JSON web token, on a private key, on a token of a service, on the name of a private network, on a personal path, and on an address that is not in its allow-list of the public addresses that this project needs (`github.com`, `gnome.org`, `w3.org`, `fsf.org`, `gnu.org`, and `example.com`). It reads the files of the tree and the messages of the commits; it prints the file and the line, or the hash of a commit, and it never prints the value that it found. `tests/test-engine.sh` and `gnome/tools/test.sh` run it before their tests. `.gitignore` names the credential file of the Fizzy CLI (`.fizzy.yaml`), so a token of that program cannot enter this repository. Measured: the scan reports no fault in the tree and none in the history; the engine tests stay at 8 of 8 and the unit tests at 108 of 108. |
-| 14 | 2026-09-27 | Request of the user: the widget SHALL be a row of the system menu and not an icon of its own in the panel. Solution: `lib/indicator.js` now builds a `QuickSettings.SystemIndicator` with one `QuickSettings.QuickMenuToggle`. The `title` is `PhoneCam`, the `subtitle` is the state (`streaming` or `stopped`, with the number of problems), the `iconName` is `phone-symbolic`, and `checked` is true while the stream runs. A click on the toggle starts or stops the stream, as the first row of the menu does. The menu of the toggle holds the whole menu of the widget, and every row is unchanged, so REQ-DISP-004 to REQ-DISP-010 stay true. `Main.panel.statusArea.quickSettings.addExternalIndicator()` registers the indicator and the row. The new setting `show-panel-icon` (boolean, default false) puts the icon of the widget into the box of the system menu button; the preferences window holds a switch row for it (REQ-DISP-013, REQ-PREF-002). The light of the running stream moved from the panel button to the icon of the toggle (REQ-DISP-012). The two narrow rules of the stylesheet now name the class of the widget (`#panel .phonecam-panel-button`), because the widget is no longer a panel button of its own; the declarations are unchanged. `disable()` takes the widget, the menu of the toggle, the timers, and the child processes out, as before. Measured in the smoke test in a separate GNOME Shell 50.5: the widget is a `toggle button` with the accessible name `PhoneCam: stopped` at 1399,227 176x48 in the system menu (the test opened the menu with `org.gnome.Shell.Eval`, and the shell runs with `--unsafe-mode`); with the default setting the panel holds no icon of the widget; with `show-panel-icon` true the panel holds the icon at 1452,0 24x32, and the system menu button of the panel grows from 132 px to 160 px, so the icon adds 28 px (REQ-DISP-011). The light keeps the accessible name `The camera stream runs`. The smoke test now opens the system menu, reads the row of the widget in it, and reads the icon of the panel in both states of the setting. |
+| 14 | 2026-09-27 | Request of the user: the widget SHALL be a row of the system menu and not an icon of its own in the panel. Solution: `lib/indicator.js` now builds a `QuickSettings.SystemIndicator` with one `QuickSettings.QuickMenuToggle`. The `title` is `PhoneCam`, the `subtitle` is the state (`streaming` or `stopped`, with the number of problems), the `iconName` is `phone-symbolic`, and `checked` is true while the stream runs. A click on the toggle starts or stops the stream, as the first row of the menu does. The menu of the toggle holds the whole menu of the widget, and every row is unchanged, so REQ-DISP-004 to REQ-DISP-010 stay true. `Main.panel.statusArea.quickSettings.addExternalIndicator()` registers the indicator and the row. The new setting `show-panel-icon` (boolean, default false) puts the icon of the widget into the box of the system menu button; the preferences window holds a switch row for it (REQ-DISP-013, REQ-PREF-002). The light of the running stream moved from the panel button to the icon of the toggle (REQ-DISP-012). The two narrow rules of the stylesheet now name the class of the widget (`#panel .phonecam-panel-button`), because the widget is no longer a panel button of its own; the declarations are unchanged. `disable()` takes the widget, the menu of the toggle, the timers, and the child processes out, as before. Measured in the smoke test in a separate GNOME Shell 51.5: the widget is a `toggle button` with the accessible name `PhoneCam: stopped` at 1399,227 176x48 in the system menu (the test opened the menu with `org.gnome.Shell.Eval`, and the shell runs with `--unsafe-mode`); with the default setting the panel holds no icon of the widget; with `show-panel-icon` true the panel holds the icon at 1452,0 24x32, and the system menu button of the panel grows from 132 px to 160 px, so the icon adds 28 px (REQ-DISP-011). The light keeps the accessible name `The camera stream runs`. The smoke test now opens the system menu, reads the row of the widget in it, and reads the icon of the panel in both states of the setting. |
 | 13 | 2026-09-27 | Review of the site for version 1 (the review page 75604, the extension 11075). The automatic check Shexli reported two findings and both were correct. (a) `EGO-X-004`: `lib/service.js` read the configuration files of the engine with `GLib.file_get_contents`, which blocks the main loop of the shell and breaks REQ-QA-001. The read is asynchronous now, and the package promisifies `Gio.File.load_contents_async` at construction, because the shell does not promisify it: a plain call answers "At least 2 arguments required", and the call resolves with the contents and the etag (both measured with gjs). (b) `EGO-P-006`: the package held `schemas/gschemas.compiled`, which the guidelines forbid for GNOME 45 and later. `tools/pack.sh` no longer compiles the schema, so the package holds the XML only and the build of the site compiles it; `tools/install.sh` still compiles it for a local installation. Verified: 106 unit checks, the smoke test, and the package of version 2 without the compiled schema. |
 | 12 | 2026-09-27 | Review for the release on extensions.gnome.org. Finding (a): the guidelines mark the key `version` of `metadata.json` as deprecated and as set by the site; the key is gone from the metadata of both projects. Finding (b): the guidelines say that an extension MUST NOT hold copyrighted or trademarked content without the proof of the express permission of the owner; this project holds none, because its icon comes from the icon theme. Finding (c): the guidelines discourage external scripts and ask for GJS unless the use is necessary. The owner decided to submit the extension with the engine inside the package and to explain the reason in the note for the reviewer: the engine is also a standalone command line program, and the external programs scrcpy, adb, ffmpeg, and v4l2loopback do the heavy work. `RELEASING.md` holds the note, the steps of the upload, and the version rule. The identifier `phonecam@kadir-gunel.github.io` is free on the site: measured with the API of the site on 2026-09-27 (`/api/v1/extensions/?uuid=` answers 0), with the control of a published identifier that answers 1 and of an invented identifier that answers 0. The upload page sends a visitor without a session to the login page, so the release needs the account of the owner. |
 
@@ -230,4 +234,4 @@ or stops the stream. The other actions are rows of the menu of the widget.
 | 4 | 2026-09-27 | Two reports of the user: the rotation does nothing while the stream runs, and the picture of the menu must not move under the pointer. (a) The cause of the first report is in the engine: the state of the stream came from the pid file only, and that file can be absent while scrcpy runs, so `rotate`, `camera`, `mirror`, and `mic` took the way "no camera stream runs" and wrote their value without a new stream. The engine now finds the process of scrcpy as a second source of the state and writes the pid file again (see MANUAL.md, section 8, and `tests/test-engine.sh`). Measured on the workstation of the user: a rotation with the stream running needs 4.3 seconds, and the state is correct after that. (b) The widget read the state each second for 12 seconds after an action and it built the menu again at each read, so a submenu closed under the pointer. The widget now builds the menu again only when the plan or the error list changed, and the time limit of a command that stops and starts the stream is 75 seconds (REQ-ENG-005). |
 | 3 | 2026-09-27 | Finding after the packages `scrcpy` and `android-tools` arrived. `adb get-state` reports a phone that awaits the answer of the user on the *error* output ("device unauthorized"), so the state was "unknown". The widget now reads the state from both outputs and shows one row per state: `unauthorized` ("The phone waits for the USB-debugging answer"), `offline`, and absent. Verified on this workstation: the widget reports one problem (the answer of the phone), the module takes the branch of the kernel package and reports `/dev/video10`, and `bin/phonecam start` stops at the phone with its own message. |
 | 2 | 2026-09-27 | Findings during the implementation and the tests. (a) The menu did not show the time of the last read, although the plan of the menu held it. The smoke test found this. (b) A switch row appears in the accessibility interface as a `check menu item` with a `check box`, so the test reads the value from the box. (c) The two shared scripts of the engine changed for GNOME: `bin/phonecam-setup` asks for the password with the polkit dialog when no terminal exists, and `setup-v4l2loopback.sh` also works when the kernel package holds the module and no sources exist in `/usr/src` (REQ-SET-002, REQ-SET-003). (d) The installer copies the engine, the setup command, the module script, and the configuration of the module into the directory of the extension, so the extension is self-contained (REQ-SET-001). |
-| 1 | 2026-09-27 | First release: a front-end for GNOME Shell 50 and later. |
+| 1 | 2026-09-27 | First release: a front-end for GNOME Shell 51 and later. |

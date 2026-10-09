@@ -1,0 +1,6 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The launcher of the PhoneCam app. Installed under @PREFIX@.
+# It runs the D-Bus service of the app; the session bus starts it on demand,
+# and the front-end (the GNOME Shell extension) may also start it directly.
+exec /usr/bin/gjs -m "@DATADIR@/phonecam-app/main.js" "$@"

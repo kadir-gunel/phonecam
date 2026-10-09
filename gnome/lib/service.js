@@ -1,328 +1,122 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // State reads and actions for the PhoneCam panel widget.
 //
-// Every call of the engine goes through one queue, so the widget never starts
-// two commands at the same time, and `cancel()` can stop the running command
-// at disable time.
+// The PhoneCam app holds the engine and does the work. This module is the
+// front-end of the widget: it reads the state of the app and it sends the
+// commands of the menu, both over the session D-Bus.
 
-import Gio from 'gi://Gio';
-import GLib from 'gi://GLib';
-
-import {ProcessRunner, isRunningArgv, previewArgv, resolveProgram} from './cli.js';
-import {
-    CAMERAS, DEFAULT_CARD_LABEL, DEFAULT_CAMERA, DEFAULT_ROTATION,
-    deviceNode, problemsFor, stateFromFiles,
-} from './state.js';
+import {DBusClient, messageOf} from './dbus-client.js';
 
 /** Time of the faster read after an action, in seconds. */
 export const SETTLING_SECONDS = 12;
-/** Time that the answer of `adb get-state` stays valid, in seconds. */
-export const PHONE_CACHE_SECONDS = 10;
-/** The engine reads its own configuration from this directory. */
-const CONFIG_DIRECTORY = 'phonecam';
+
+/** The state of a widget whose app did not answer. */
+const FALLBACK_STATE = Object.freeze({
+    running: false, rotation: '0', camera: '1', micOn: true, mirrorOn: false,
+});
 
 export class PhoneCamService {
     constructor() {
-        /* The shell does not promisify this method: a plain call answers "At
-           least 2 arguments required" (measured). Promisify it once, at
-           construction, so that the read of a file never blocks the main loop
-           of the shell and the review of extensions.gnome.org finds no
-           synchronous read (EGO-X-004). */
-        Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
-        this._runner = null;
-        this._engine = null;
-        this._setup = null;
-        this._queue = Promise.resolve();
-        this._cancellable = null;
-        this._preview = null;
-        this._phone = null;
-        this._phoneTime = 0;
-        this._device = null;
-        this._deviceTime = 0;
+        this._client = new DBusClient();
+        this._previewRunning = false;
     }
 
-    /**
-     * @param {string} configured - Value of the `engine` setting.
-     * @returns {string|null} Absolute path of the engine, or null.
-     */
-    setEngine(configured) {
-        const path = resolveProgram(configured);
-        if (path !== this._engine) {
-            this._engine = path;
-            this._runner = path === null ? null : new ProcessRunner(path);
-        }
-        return path;
-    }
-
-    /** @param {string} configured - Value of the `setup` setting. */
-    setSetup(configured) {
-        this._setup = resolveProgram(configured);
-        return this._setup;
-    }
-
-    get engine() {
-        return this._engine;
-    }
-
-    get setup() {
-        return this._setup;
-    }
-
-    /** @returns {boolean} True while the preview process runs. */
+    /** @returns {boolean} True while the preview window runs. */
     get previewRunning() {
-        return this._preview !== null && !this._preview.get_if_exited();
+        return this._previewRunning;
     }
 
-    /** Serialize one task behind the running tasks. */
-    _enqueue(task) {
-        const result = this._queue.then(task, task);
-        this._queue = result.then(() => {}, () => {});
-        return result;
+    /* The engine lives in the app, so the two settings of the widget have no
+       effect. The methods stay, because the widget applies its settings. */
+
+    /** @param {string} _engine - The setting of the widget. @returns {null} */
+    setEngine(_engine) {
+        return null;
     }
 
-    /* The read is asynchronous. A synchronous read of a file blocks the main
-       loop of the shell. The review of extensions.gnome.org reports such a read
-       as EGO-X-004. */
-    /** @returns {Promise<string|null>} Content of one file, or null. */
-    async _readFile(path) {
-        try {
-            const file = Gio.File.new_for_path(path);
-            const [contents] = await file.load_contents_async(null);
-            return new TextDecoder().decode(contents);
-        } catch (_error) {
-            return null;
-        }
-    }
-
-    /** @returns {Promise<string|null>} Content of one file of the engine, or null. */
-    async _readConfig(name) {
-        return this._readFile(GLib.build_filenamev([GLib.get_user_config_dir(), CONFIG_DIRECTORY, name]));
-    }
-
-    /** @returns {Promise<Array<{node: string, name: string}>>} Video devices from /sys. */
-    async _readVideoDevices() {
-        const entries = [];
-        const directory = '/sys/class/video4linux';
-        let dir = null;
-        try {
-            dir = GLib.Dir.open(directory, 0);
-        } catch (_error) {
-            return entries;
-        }
-        let name;
-        while ((name = dir.read_name()) !== null) {
-            if (!name.startsWith('video'))
-                continue;
-            const label = await this._readFile(`${directory}/${name}/name`);
-            entries.push({node: name, name: label === null ? null : label.trim()});
-        }
-        dir.close();
-        return entries;
-    }
-
-    /** @returns {Promise<string|null>} The device node of the virtual camera, or null. */
-    async device() {
-        const now = GLib.get_monotonic_time();
-        if (this._deviceTime !== 0 && now - this._deviceTime < 2 * 1000 * 1000)
-            return this._device;
-        this._device = deviceNode(await this._readVideoDevices(), DEFAULT_CARD_LABEL);
-        this._deviceTime = now;
-        return this._device;
-    }
-
-    /**
-     * Does PipeWire hold the source of our camera? The portal applications get
-     * the camera from PipeWire, and PipeWire reads the video devices at its
-     * start only.
-     * @param {string|null} device - Device node, for example /dev/video10.
-     * @returns {Promise<boolean|null>} null when the question failed.
-     */
-    async pipeWireSource(device) {
-        const program = GLib.find_program_in_path('pw-dump');
-        if (program === null)
-            return null;
-        const result = await this._enqueue(() =>
-            new ProcessRunner(program).run([], {cancellable: null, timeoutSeconds: 15}));
-        if (!result.ok)
-            return null;
-        const node = (device ?? '').replace('/dev/', '');
-        try {
-            const entries = JSON.parse(result.stdout);
-            return entries.some(entry => {
-                const props = entry?.info?.props ?? {};
-                if (props['media.class'] !== 'Video/Source')
-                    return false;
-                return node === '' || String(props['node.name'] ?? '').includes(node);
-            });
-        } catch (_error) {
-            return null;
-        }
-    }
-
-    /**
-     * Let PipeWire read the list of the video devices again, so that a portal
-     * application finds the camera while the stream runs.
-     * @returns {Promise<object>} Result of the command.
-     */
-    async restartPipeWire() {
-        const program = GLib.find_program_in_path('systemctl');
-        if (program === null)
-            return {ok: false, stdout: '', stderr: 'systemctl was not found', code: null};
-        const runner = new ProcessRunner(program);
-        return this._enqueue(() =>
-            runner.run(['--user', 'restart', 'pipewire'], {cancellable: null, timeoutSeconds: 30}));
-    }
-
-    /** Let the next read ask the phone again, for the open menu. */
-    clearPhoneCache() {
-        this._phone = null;
-        this._phoneTime = 0;
-    }
-
-    /**
-     * Run the setup command of the module. That command asks for the password
-     * with the polkit dialog of the session.
-     * @returns {Promise<object>} Result of the command.
-     */
-    async runSetup({timeoutSeconds = 60} = {}) {
-        if (this._setup === null)
-            return {ok: false, code: null, stdout: '', stderr: 'The setup command was not found'};
-        const runner = new ProcessRunner(this._setup);
-        return this._enqueue(() => runner.run([], {cancellable: null, timeoutSeconds}));
-    }
-
-    /** @returns {Promise<string|null>} The adb state of the phone, or null. */
-    async phoneState() {
-        const now = GLib.get_monotonic_time();
-        if (this._phone !== null && now - this._phoneTime < PHONE_CACHE_SECONDS * 1000 * 1000)
-            return this._phone;
-
-        const adb = GLib.find_program_in_path('adb');
-        if (adb === null) {
-            this._phone = null;
-            this._phoneTime = now;
-            return null;
-        }
-
-        const runner = new ProcessRunner(adb);
-        const result = await this._enqueue(() =>
-            runner.run(['get-state'], {cancellable: null, timeoutSeconds: 5}));
-        // adb answers on the standard output for a ready phone and on the
-        // error output for the other states ("device unauthorized", "offline").
-        const text = `${result.stdout}\n${result.stderr}`;
-        const answer = result.stdout.trim();
-        let state = 'unknown';
-        if (/\bunauthorized\b/i.test(text))
-            state = 'unauthorized';
-        else if (/\boffline\b/i.test(text))
-            state = 'offline';
-        else if (answer !== '')
-            state = answer;
-        this._phone = state;
-        this._phoneTime = now;
-        return this._phone;
+    /** @param {string} _setup - The setting of the widget. @returns {null} */
+    setSetup(_setup) {
+        return null;
     }
 
     /**
      * Read the whole state of the widget.
-     * @returns {Promise<object>} `{state, problems, device, phone}`.
+     * @returns {Promise<object>} `{state, problems, device, phone, pipeWireSource}`.
      */
     async read() {
-        const [rotation, camera, mic, mirror] = await Promise.all([
-            this._readConfig('rotation'),
-            this._readConfig('camera'),
-            this._readConfig('mic'),
-            this._readConfig('mirror'),
-        ]);
-        const files = {
-            rotation: rotation ?? DEFAULT_ROTATION,
-            camera: camera ?? DEFAULT_CAMERA,
-            mic: mic ?? 'on',
-            mirror: mirror ?? 'off',
-        };
-
-        let running = false;
-        if (this._runner !== null) {
-            const result = await this._enqueue(() => this._runner.run(isRunningArgv(), {cancellable: null}));
-            // The engine reports the state through the exit status only.
-            running = result.code === 0 && !result.cancelled && !result.timedOut;
+        try {
+            const result = await this._client.GetState();
+            this._previewRunning = result.previewRunning === true;
+            return {
+                state: {
+                    running: result.running === true,
+                    rotation: result.rotation,
+                    camera: result.camera,
+                    micOn: result.micOn === true,
+                    mirrorOn: result.mirrorOn === true,
+                },
+                problems: (result.problems ?? []).map(([title, hint]) => ({title, hint})),
+                device: result.device === '' ? null : result.device,
+                phone: result.phone === '' ? undefined : result.phone,
+                pipeWireSource: result.pipeWireSource === true,
+            };
+        } catch (error) {
+            return {
+                state: {...FALLBACK_STATE},
+                problems: [{title: 'The PhoneCam app did not answer',
+                    hint: messageOf(error)}],
+                device: null,
+                phone: undefined,
+                pipeWireSource: true,
+            };
         }
-
-        const device = await this.device();
-        const phone = await this.phoneState();
-        const pipeWireSource = await this.pipeWireSource(device);
-        const problems = problemsFor({
-            engine: this._engine !== null,
-            device: device !== null,
-            scrcpy: GLib.find_program_in_path('scrcpy') !== null,
-            adb: GLib.find_program_in_path('adb') !== null,
-            // Without adb there is no answer, and the adb row already covers it.
-            phone: phone === null ? undefined : phone,
-        });
-
-        return {
-            state: stateFromFiles(files, {running}),
-            problems,
-            device,
-            phone,
-            pipeWireSource,
-        };
     }
 
     /**
-     * Run one action of the engine.
-     * @param {string[]} argv - Command arguments from the plan.
-     * @returns {Promise<object>} `{ok, stdout, stderr, code}`.
+     * Run one command of the engine.
+     * @param {string[]} argv - Arguments of the command.
+     * @returns {Promise<object>} `{ok, code, stdout, stderr}`.
      */
-    async run(argv, {timeoutSeconds = undefined} = {}) {
-        if (this._runner === null)
-            return {ok: false, stdout: '', stderr: 'The phonecam command was not found', code: null};
-        const options = {cancellable: null};
-        if (timeoutSeconds !== undefined)
-            options.timeoutSeconds = timeoutSeconds;
-        return this._enqueue(() => this._runner.run(argv, options));
+    async run(argv) {
+        return this._client.Run(argv);
     }
 
-    /** Open the preview window. @returns {boolean} True when the process started. */
-    startPreview() {
-        if (this._runner === null)
-            return false;
-        if (this.previewRunning)
-            return true;
-        this._preview = this._runner.spawnDetached(previewArgv());
-        return this._preview !== null;
+    /** Open the preview window. @returns {Promise<object>} `{ok, stdout, stderr}`. */
+    async startPreview() {
+        const result = await this._client.Preview(true);
+        if (result.ok)
+            this._previewRunning = true;
+        return {ok: result.ok, stdout: '', stderr: result.error ?? ''};
     }
 
-    /** Stop the preview window. The engine stops ffplay itself on SIGTERM. */
-    stopPreview() {
-        const preview = this._preview;
-        if (preview === null)
-            return;
-        this._preview = null;
-        if (preview.get_if_exited())
-            return;
-        preview.send_signal(15);
-        // Never wait in the main loop of the shell: force the end later.
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
-            if (!preview.get_if_exited())
-                preview.force_exit();
-            return GLib.SOURCE_REMOVE;
-        });
+    /** Close the preview window. @returns {Promise<object>} `{ok, stdout, stderr}`. */
+    async stopPreview() {
+        const result = await this._client.Preview(false);
+        if (result.ok)
+            this._previewRunning = false;
+        return {ok: result.ok, stdout: '', stderr: result.error ?? ''};
     }
 
-    /** Stop the running command and the preview window. */
-    cancel() {
-        this._cancellable?.cancel();
-        this._runner?.cancel();
-        this.stopPreview();
+    /** @returns {Promise<object>} `{ok, stdout, stderr}`. */
+    async restartPipeWire() {
+        const result = await this._client.RestartPipeWire();
+        return {ok: result.ok, stdout: '', stderr: result.error ?? ''};
     }
 
+    /** @returns {Promise<object>} `{ok, stdout, stderr}`. */
+    async runSetup() {
+        const result = await this._client.RunSetup();
+        return {ok: result.ok, stdout: '', stderr: result.error ?? ''};
+    }
+
+    /** Let the next read ask the phone again, for the open menu. */
+    clearPhoneCache() {
+        this._client.ClearPhoneCache().catch(() => {});
+    }
+
+    /** The app keeps the state, so only the client comes out. */
     destroy() {
-        this.cancel();
-        this._runner = null;
-        this._engine = null;
-        this._setup = null;
-        this._cancellable = null;
-        this._queue = Promise.resolve();
+        this._client = null;
+        this._previewRunning = false;
     }
 }

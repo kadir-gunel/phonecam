@@ -6,3 +6,6 @@ gschemas.compiled
 # Credential file of the Fizzy CLI, in case the CLI runs in this directory
 .fizzy.yaml
 .fizzy.yml
+
+# Build directory of meson (the app and any local build)
+builddir/

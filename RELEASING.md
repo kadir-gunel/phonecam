@@ -8,8 +8,11 @@ extensions.gnome.org. The release needs an account of the owner on that site.
     cd gnome && ./tools/pack.sh
 
 The command writes `phonecam@kadir-gunel.github.io.shell-extension.zip` in
-`gnome/`. The file holds the extension, the engine, the setup commands, the
-configuration of the module, the license, and the compiled schema. The file
+`gnome/`. The file holds the widget only: the extension, the preferences, the
+metadata, the stylesheet, the modules of `lib/`, the schema source, and the
+license. The widget is a front-end, so the package holds no script, no `bin/`,
+and no `etc/`. The engine and the setup commands come with the PhoneCam app
+(the directory `app/` of the repository), which is a separate install. The file
 holds no test, no document, and no tool of the repository.
 
 ## The upload
@@ -43,29 +46,36 @@ The version plan: version 1 is in review on the site. Version 2 holds the two
 corrections of the automatic check and is kept beside the repository as
 `../phonecam-v2.shell-extension.zip`. Version 3 holds this move. If the corrected
 build goes up first, the move uses version 3; if it does not, the move uses
-version 2.
+version 2. The version that goes up next holds the widget only: the reviewer of
+extensions.gnome.org rejected the scripts in the package, and the engine and the
+setup commands moved to the app.
 
 ## The note for the reviewer
 
 Paste this text in the note field of the form:
 
-> The extension starts and reads the command line program `bin/phonecam`, which
-> comes with the extension. That program is also a standalone command line
-> program: a user runs the same commands from a terminal, and the shared part of
-> the project holds it. The extension itself does the work of the menu only, and
-> it calls the program with an argument list, never through a shell.
+> The widget is a front-end and it holds no script. The engine
+> (`bin/phonecam`) and the setup commands come with the PhoneCam app, which is a
+> separate install: it is built with meson from the directory `app/` of the same
+> repository. The app holds no code of the shell. The app owns the session D-Bus
+> name `io.github.kadir_gunel.PhoneCam`; the widget is a client of it. The two
+> talk over the session bus only. The widget sends the engine an argument list,
+> never through a shell.
 >
-> The program starts other programs, which the user must install: `scrcpy` and
-> `adb` (the stream), `ffmpeg` (the preview window), `v4l2loopback` (the virtual
-> camera), PipeWire, `pactl`, and `pkexec`. The extension installs no package
-> and it starts no package manager: it shows the exact package command in the
-> menu when a program is missing.
+> The engine is also a standalone command line program: a user runs the same
+> commands from a terminal, and the app installs it. The app starts other
+> programs, which the user must install: `scrcpy` and `adb` (the stream),
+> `ffmpeg` (the preview window), `v4l2loopback` (the virtual camera), PipeWire,
+> `pactl`, and `pkexec`. Neither part installs a package and neither starts a
+> package manager: the widget shows the exact package command in the menu when a
+> program is missing.
 >
 > The one privileged step is the build of the kernel module. The user starts it
-> from the menu with the row `Set up the virtual camera`. The command copies the
-> root part into `/usr/local/lib/phonecam/` with the owner `root` and then runs
-> that root-owned copy, so that no user process can change the file that runs as
-> root. The smoke test of the repository reads the argument list of that call.
+> from the menu with the row `Set up the virtual camera`. The app runs the setup
+> command, which copies the root part into `/usr/local/lib/phonecam/` with the
+> owner `root` and then runs that root-owned copy, so that no user process can
+> change the file that runs as root. The smoke test of the repository reads the
+> argument list of that call.
 
 ## After the upload
 
